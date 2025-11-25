@@ -91,7 +91,7 @@ streamlit_craps/
 - **Python 3.12+** required
 - **Dependencies**:
   - Streamlit: Web application framework
-  - Pandas: Data manipulation and analysis
+  - Polars: Fast data manipulation and analysis
   - NumPy: Numerical computations
   - Plotly: Interactive visualizations
 
