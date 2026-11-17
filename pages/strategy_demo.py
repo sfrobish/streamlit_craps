@@ -3,7 +3,7 @@ import streamlit as st
 import polars as pl
 
 
-from crapgame import CrapGame
+from crapgame import CrapGame, SEATS
 from player import CrapsPlayer
 from strategies import strategy_registry
 from simulation import run_multiple_simulations
@@ -19,9 +19,8 @@ if "crapgame" not in st.session_state:
     st.session_state.crapgame = CrapGame()
 if "players" not in st.session_state:
     st.session_state.players = {}
-if "active_players" not in st.session_state:
-    st.session_state.active_players = [False, False, False, False]
-strategy_options = strategy_registry.keys()
+profiles = st.session_state.setdefault("profiles", {})
+strategy_options = [*strategy_registry, *profiles]
 
 
 # Sidebar for configuration
@@ -31,21 +30,14 @@ st.sidebar.header("Demo Configuration")
 num_players = st.sidebar.number_input(
     "Number of Players",
     min_value=1,
-    max_value=4,
+    max_value=SEATS,
     value=1,
     step=1,
-    help="Select how many players to simulate (1-4)"
+    help=f"Select how many players to simulate (1-{SEATS})"
 )
 
 # Create columns for player inputs
-if num_players == 1:
-    cols = [st.container()]
-elif num_players == 2:
-    cols = st.columns(2)
-elif num_players == 3:
-    cols = st.columns(3)
-else:  # 4 players
-    cols = st.columns(4)
+cols = st.columns(num_players)
 
 debugmode = st.sidebar.checkbox("Enable Debug Mode", value=False)
 
@@ -81,12 +73,14 @@ for i in range(num_players):
                 i+1,
                 st.session_state.crapgame,
                 strategy=strategy_type,
-                starting_bankroll=starting_bankroll
+                starting_bankroll=starting_bankroll,
+                profile=profiles.get(strategy_type),
             )
             st.session_state.players[f"Player_{i+1}"] = player
         else:
             player = st.session_state.players[f"Player_{i+1}"]
             player.strategy = strategy_type
+            player.profile = profiles.get(strategy_type)
             
 
         if debugmode:

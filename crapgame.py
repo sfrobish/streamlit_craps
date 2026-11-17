@@ -6,8 +6,10 @@ from player import CrapsPlayer
 from stats import collist, house_board_to_df
 
 NUMBERS = [4, 5, 6, 8, 9, 10]
+SEATS = 3  # players per table
 TRUE_ODDS = {4: 2, 10: 2, 5: 3/2, 9: 3/2, 6: 6/5, 8: 6/5}      # pass / come odds
 LAY_ODDS = {4: 1/2, 10: 1/2, 5: 2/3, 9: 2/3, 6: 5/6, 8: 5/6}   # don't pass / don't come odds
+MAX_ODDS_345 = {4: 3, 10: 3, 5: 4, 9: 4, 6: 5, 8: 5}
 PLACE_ODDS = {4: 9/5, 10: 9/5, 5: 7/5, 9: 7/5, 6: 7/6, 8: 7/6}
 
 
@@ -29,73 +31,74 @@ class CrapGame:
         self.roundnum = 0
         self.button = "off"
         self.roll = None
+        self.last_event = None  # 'sevenout' | None, set by settle_bets
         self.players = []
         self.board = {  
-            "passline": [None] * 4,
-            "passodds": [None] * 4,
-            "dontpassline": [None] * 4,
-            "dontpassodds": [None] * 4,
-            "comeline": [None] * 4,
-            "dontcomeline": [None] * 4,
+            "passline": [None] * SEATS,
+            "passodds": [None] * SEATS,
+            "dontpassline": [None] * SEATS,
+            "dontpassodds": [None] * SEATS,
+            "comeline": [None] * SEATS,
+            "dontcomeline": [None] * SEATS,
             "4": {
-                "place": [None] * 4,
-                "buy": [None] * 4,
-                "lay": [None] * 4,
-                "placetolose": [None] * 4,
-                "come": [None] * 4,
-                "comeodds": [None] * 4,
-                "dontcome": [None] * 4,
-                "dontcomeodds": [None] * 4
+                "place": [None] * SEATS,
+                "buy": [None] * SEATS,
+                "lay": [None] * SEATS,
+                "placetolose": [None] * SEATS,
+                "come": [None] * SEATS,
+                "comeodds": [None] * SEATS,
+                "dontcome": [None] * SEATS,
+                "dontcomeodds": [None] * SEATS
             },
             "5": {
-                "place": [None] * 4,
-                "buy": [None] * 4,
-                "lay": [None] * 4,
-                "placetolose": [None] * 4,
-                "come": [None] * 4,
-                "comeodds": [None] * 4,
-                "dontcome": [None] * 4,
-                "dontcomeodds": [None] * 4
+                "place": [None] * SEATS,
+                "buy": [None] * SEATS,
+                "lay": [None] * SEATS,
+                "placetolose": [None] * SEATS,
+                "come": [None] * SEATS,
+                "comeodds": [None] * SEATS,
+                "dontcome": [None] * SEATS,
+                "dontcomeodds": [None] * SEATS
             },
             "6": {
-                "place": [None] * 4,
-                "buy": [None] * 4,
-                "lay": [None] * 4,
-                "placetolose": [None] * 4,
-                "come": [None] * 4,
-                "comeodds": [None] * 4,
-                "dontcome": [None] * 4,
-                "dontcomeodds": [None] * 4
+                "place": [None] * SEATS,
+                "buy": [None] * SEATS,
+                "lay": [None] * SEATS,
+                "placetolose": [None] * SEATS,
+                "come": [None] * SEATS,
+                "comeodds": [None] * SEATS,
+                "dontcome": [None] * SEATS,
+                "dontcomeodds": [None] * SEATS
             },
             "8": {
-                "place": [None] * 4,
-                "buy": [None] * 4,
-                "lay": [None] * 4,
-                "placetolose": [None] * 4,
-                "come": [None] * 4,
-                "comeodds": [None] * 4,
-                "dontcome": [None] * 4,
-                "dontcomeodds": [None] * 4
+                "place": [None] * SEATS,
+                "buy": [None] * SEATS,
+                "lay": [None] * SEATS,
+                "placetolose": [None] * SEATS,
+                "come": [None] * SEATS,
+                "comeodds": [None] * SEATS,
+                "dontcome": [None] * SEATS,
+                "dontcomeodds": [None] * SEATS
             },
             "9": {
-                "place": [None] * 4,
-                "buy": [None] * 4,
-                "lay": [None] * 4,
-                "placetolose": [None] * 4,
-                "come": [None] * 4,
-                "comeodds": [None] * 4,
-                "dontcome": [None] * 4,
-                "dontcomeodds": [None] * 4
+                "place": [None] * SEATS,
+                "buy": [None] * SEATS,
+                "lay": [None] * SEATS,
+                "placetolose": [None] * SEATS,
+                "come": [None] * SEATS,
+                "comeodds": [None] * SEATS,
+                "dontcome": [None] * SEATS,
+                "dontcomeodds": [None] * SEATS
             },
             "10": {
-                "place": [None] * 4,
-                "buy": [None] * 4,
-                "lay": [None] * 4,
-                "placetolose": [None] * 4,
-                "come": [None] * 4,
-                "comeodds": [None] * 4,
-                "dontcome": [None] * 4,
-                "dontcomeodds": [None] * 4 
+                "place": [None] * SEATS,
+                "buy": [None] * SEATS,
+                "lay": [None] * SEATS,
+                "placetolose": [None] * SEATS,
+                "come": [None] * SEATS,
+                "comeodds": [None] * SEATS,
+                "dontcome": [None] * SEATS,
+                "dontcomeodds": [None] * SEATS 
             }
         }
 
@@ -106,6 +109,8 @@ class CrapGame:
         Args:
             player: The CrapsPlayer instance to add
         """
+        if len(self.players) >= SEATS:
+            raise ValueError(f"Table is full ({SEATS} seats)")
         self.players.append(player)
         return len(self.players) - 1  # Return player position/index
 
@@ -126,6 +131,12 @@ class CrapGame:
             else:
                 if player_board[bet] > 0:
                     self.board[bet][id] = player_board[bet]
+
+
+    def max_odds(self, num, flat):
+        """Largest odds bet allowed behind a flat bet on num ("3x4x5x" or e.g. "2x")."""
+        mult = MAX_ODDS_345[num] if self.maxodds == "3x4x5x" else float(self.maxodds.rstrip("x"))
+        return min(flat * mult, self.limit)
 
 
     def roll_dice(self, die1=None, die2=None) -> dict:
@@ -190,6 +201,7 @@ class CrapGame:
         """Settle every bet on the board for one roll and move the button."""
         roll = rolldict["total"]
         point = self.button
+        self.last_event = None
 
         if point == 'off':
             # Come-out roll. Place bets and come odds are off; don't come odds work.
@@ -228,6 +240,7 @@ class CrapGame:
             self._settle("comeline", mult=1, label="comelinewon")
             self._settle("dontcomeline")
             self.button = 'off'
+            self.last_event = 'sevenout'
         elif roll == 11:
             self._settle("comeline", mult=1, label="comelinewon")
             self._settle("dontcomeline")

@@ -9,7 +9,7 @@ cleared to 0 on both the house board and the player's board.
 import random
 import unittest
 
-from crapgame import CrapGame
+from crapgame import CrapGame, SEATS
 from player import CrapsPlayer
 from stats import get_statistics
 from strategies import strategy_registry
@@ -357,6 +357,12 @@ class TestBoardMechanics(CrapsTest):
             self.assertTrue(1 <= r["die1"] <= 6 and 1 <= r["die2"] <= 6)
             self.assertEqual(r["total"], r["die1"] + r["die2"])
 
+    def test_table_full(self):
+        for _ in range(SEATS - 1):  # setUp already seated one
+            self.g.add_player(StubPlayer(self.g))
+        with self.assertRaises(ValueError):
+            self.g.add_player(StubPlayer(self.g))
+
     def test_move_button(self):
         self.g.move_button(6)
         self.assertEqual(self.g.button, 6)
@@ -371,10 +377,17 @@ class TestSimulationBookkeeping(unittest.TestCase):
 
     def test_money_balances_for_every_strategy(self):
         random.seed(7)
-        g = CrapGame()
-        players = [CrapsPlayer(i + 1, g, s, 1000) for i, s in enumerate(strategy_registry)]
+        aggressive = {"base_strategy": "Pass/Come 2x Place 6&8", "odds_press_units": 1}
+        seated = [(s, None) for s in strategy_registry] + [("aggressive", aggressive)]
+        # Split players across as many tables as the seat limit needs.
+        games, players = [], []
+        for i, (name, profile) in enumerate(seated):
+            if i % SEATS == 0:
+                games.append(CrapGame())
+            players.append(CrapsPlayer(i % SEATS + 1, games[-1], name, 1000, profile=profile))
         for _ in range(2000):
-            g.play_toss()
+            for g in games:
+                g.play_toss()
         for p in players:
             with self.subTest(strategy=p.strategy):
                 # cash = start - money put down + money paid back
@@ -411,6 +424,43 @@ class TestDontLayOneUnit(CrapsTest):
         self.assertEqual(board["dontpassline"], 5.0)
         self.assertEqual(board["dontcomeline"], 0.0)
         self.assertEqual(board["dontpassodds"], 0.0)
+
+
+class TestOddsPress(unittest.TestCase):
+    """Pressing odds on a number each time it hits; seven-out resets."""
+
+    def make(self, base="Pass/Come 2x Place 6&8", odds_press_units=1):
+        self.g = CrapGame()
+        self.p = CrapsPlayer(1, self.g, "test", 1000,
+                             profile={"base_strategy": base, "odds_press_units": odds_press_units})
+        self.g.play_toss(5, 6)  # come-out 11: pass bet goes up
+        self.g.play_toss(2, 2)  # point 4
+
+    def test_odds_press_on_come_number_capped_at_max_odds(self):
+        self.make()
+        self.g.play_toss(4, 5)  # come bet travels to 9 with 2x ($10) odds
+        board = self.p.player_board["9"]
+        self.assertEqual((board["come"], board["comeodds"]), (5.0, 10.0))
+        self.g.play_toss(4, 5)  # 9 hits: new $5 come on 9, odds pressed to $15
+        self.assertEqual((board["come"], board["comeodds"]), (5.0, 15.0))
+        for _ in range(3):
+            self.g.play_toss(4, 5)  # keeps pressing until 4x max on the 9
+        self.assertEqual((board["come"], board["comeodds"]), (5.0, 20.0))
+        self.assertEqual(self.p.player_board["passline"], 5.0)  # flats untouched
+
+    def test_odds_press_resets_on_seven_out(self):
+        self.make()
+        self.g.play_toss(4, 5)
+        self.g.play_toss(4, 5)
+        self.assertEqual(self.p.pressed_odds, {9: 15.0})
+        self.g.play_toss(3, 4)
+        self.assertEqual(self.p.pressed_odds, {})
+
+    def test_off_means_no_press(self):
+        self.make(odds_press_units=0)
+        self.g.play_toss(4, 5)
+        self.g.play_toss(4, 5)
+        self.assertEqual(self.p.player_board["9"]["comeodds"], 10.0)
 
 
 if __name__ == "__main__":

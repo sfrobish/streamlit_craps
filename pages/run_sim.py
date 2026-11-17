@@ -5,9 +5,11 @@ import polars as pl
 import plotly.graph_objects as go
 import plotly.express as px
 
-from crapgame import CrapGame
+from crapgame import CrapGame, SEATS
 from strategies import strategy_registry
 from stats import get_statistics
+
+profiles = st.session_state.setdefault("profiles", {})
 
 # Number of rounds
 num_rounds = st.number_input(
@@ -31,7 +33,7 @@ num_simulations = st.number_input(
 num_players = st.number_input(
     "Number of Players",
     min_value=1,
-    max_value=10,
+    max_value=SEATS,
     value=1,
     step=1
 )
@@ -40,7 +42,7 @@ for i in range(num_players):
     st.subheader(f"🎲 Player {i+1} Configuration")
     strategy = st.selectbox(
         f"Select Strategy for Player {i+1}",
-        options=list(strategy_registry.keys()),
+        options=[*strategy_registry, *profiles],
         key=f"strategy_player_{i}"
     )
     starting_bankroll = st.number_input(
@@ -62,7 +64,8 @@ if st.button("🎲 Run Simulation", type="primary"):
                     id=i+1,
                     crapgame=game,
                     strategy=st.session_state[f"strategy_player_{i}"],
-                    starting_bankroll=st.session_state[f"bankroll_player_{i}"]
+                    starting_bankroll=st.session_state[f"bankroll_player_{i}"],
+                    profile=profiles.get(st.session_state[f"strategy_player_{i}"]),
                 )
             for n_shooter in range(num_rounds):
                 while not game.play_toss()["sevenout"]:
