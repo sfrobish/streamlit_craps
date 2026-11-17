@@ -398,6 +398,53 @@ class TestSimulationBookkeeping(unittest.TestCase):
                 self.assertEqual(st["total_rolls"], 2000)
 
 
+class TestTableLimits(CrapsTest):
+
+    def take(self):
+        self.g.take_bets(self.p.player_board, 1)
+
+    def test_odds_capped_at_3x4x5x(self):
+        for n, cap in {4: 15, 10: 15, 5: 20, 9: 20, 6: 25, 8: 25}.items():
+            self.p.player_board[str(n)].update(come=5.0, comeodds=100.0)
+        self.take()
+        for n, cap in {4: 15, 10: 15, 5: 20, 9: 20, 6: 25, 8: 25}.items():
+            self.assertEqual(self.on_board("comeodds", n), (cap, cap))
+
+    def test_pass_odds_capped_on_point(self):
+        self.g.button = 4
+        self.p.player_board.update(passline=5.0, passodds=100.0)
+        self.take()
+        self.assertEqual(self.p.player_board["passodds"], 15.0)
+
+    def test_lay_odds_win_capped_at_6x_flat(self):
+        self.g.button = 4
+        self.p.player_board.update(dontpassline=5.0, dontpassodds=500.0)
+        for n in NUMBERS:
+            self.p.player_board[str(n)].update(dontcome=5.0, dontcomeodds=500.0)
+        self.take()
+        self.assertAlmostEqual(self.p.player_board["dontpassodds"] * LAY_ODDS[4], 15.0)
+        for n in NUMBERS:
+            self.assertAlmostEqual(self.p.player_board[str(n)]["dontcomeodds"], 30.0)  # 3-4-5x = 6x lay
+
+    def test_flat_bets_capped_at_table_limit(self):
+        self.p.player_board.update(passline=5000.0)
+        self.p.player_board["6"]["place"] = 5000.0
+        self.take()
+        self.assertEqual(self.p.player_board["passline"], 1000.0)
+        self.assertEqual(self.p.player_board["6"]["place"], 1000.0)
+
+    def test_flat_odds_multiple(self):
+        self.g.maxodds = "2x"
+        self.p.player_board["6"].update(come=5.0, comeodds=100.0)
+        self.take()
+        self.assertEqual(self.p.player_board["6"]["comeodds"], 10.0)
+
+    def test_odds_without_flat_bet_removed(self):
+        self.p.player_board["6"]["comeodds"] = 10.0
+        self.take()
+        self.assertEqual(self.on_board("comeodds", 6), (0, 0))
+
+
 class TestDontLayOneUnit(CrapsTest):
 
     def test_lays_odds_to_win_one_unit(self):

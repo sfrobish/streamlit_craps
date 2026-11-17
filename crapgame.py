@@ -117,26 +117,52 @@ class CrapGame:
 
     def take_bets(self, player_board, playerid):
         """Take the bets from a player and update the house board.
-        
+        Bets over the table's limits are cut down on the player's board first.
+
         Args:
             player_board: The player's betting board
             playerid: The player's position/index in the game
         """
+        self.enforce_limits(player_board)
         id = playerid - 1   # Adjust for zero-based index
         for bet in self.board:
             if bet in ["4", "5", "6", "8", "9", "10"]:
                 for subbet in self.board[bet]:
-                    if player_board[bet][subbet] > 0:
-                        self.board[bet][subbet][id] = player_board[bet][subbet]
+                    self.board[bet][subbet][id] = player_board[bet][subbet]
             else:
-                if player_board[bet] > 0:
-                    self.board[bet][id] = player_board[bet]
+                self.board[bet][id] = player_board[bet]
+
+
+    def enforce_limits(self, board):
+        """Cap every bet at the table limit, and odds at the max-odds multiple of their flat bet."""
+        for key, val in board.items():
+            if isinstance(val, dict):
+                for sub in val:
+                    val[sub] = min(val[sub], self.limit)
+            else:
+                board[key] = min(val, self.limit)
+        for n in NUMBERS:
+            spot = board[str(n)]
+            spot["comeodds"] = min(spot["comeodds"], self.max_odds(n, spot["come"]))
+            spot["dontcomeodds"] = min(spot["dontcomeodds"], self.max_lay(n, spot["dontcome"]))
+        if self.button in NUMBERS:
+            board["passodds"] = min(board["passodds"], self.max_odds(self.button, board["passline"]))
+            board["dontpassodds"] = min(board["dontpassodds"], self.max_lay(self.button, board["dontpassline"]))
+
+
+    def odds_multiple(self, num):
+        """Max odds as a multiple of the flat bet ("3x4x5x" or e.g. "2x")."""
+        return MAX_ODDS_345[num] if self.maxodds == "3x4x5x" else float(self.maxodds.rstrip("x"))
 
 
     def max_odds(self, num, flat):
-        """Largest odds bet allowed behind a flat bet on num ("3x4x5x" or e.g. "2x")."""
-        mult = MAX_ODDS_345[num] if self.maxodds == "3x4x5x" else float(self.maxodds.rstrip("x"))
-        return min(flat * mult, self.limit)
+        """Largest pass/come odds bet allowed behind a flat bet on num."""
+        return min(flat * self.odds_multiple(num), self.limit)
+
+
+    def max_lay(self, num, flat):
+        """Largest don't odds bet: it may win at most the max-odds multiple of the flat bet."""
+        return min(flat * self.odds_multiple(num) / LAY_ODDS[num], self.limit)
 
 
     def roll_dice(self, die1=None, die2=None) -> dict:

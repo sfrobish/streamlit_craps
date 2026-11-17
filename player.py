@@ -116,8 +116,8 @@ class CrapsPlayer:
         # Strategy's own bet total is ignored: charge what actually landed on the table.
         self.player_board, _ = strategy_registry[base](self.player_board, self.crapgame, self.prev_board)
         self.press_odds()
+        self.crapgame.take_bets(self.player_board, self.id)  # house trims anything over its limits
         self.total_bet = self.chips_on_table()
-        self.crapgame.take_bets(self.player_board, self.id)
         self.total_wagered += self.total_bet - before
         self.bankroll -= self.total_bet - before
 
@@ -145,15 +145,15 @@ class CrapsPlayer:
 
 
     def press_odds(self):
-        """Raise odds on pressed numbers to their pressed size, capped at the table's max odds.
+        """Raise odds on pressed numbers to their pressed size (the house caps it at max odds).
         Only resizes odds the strategy chose to place; flat bets are untouched."""
-        game, board = self.crapgame, self.player_board
+        board = self.player_board
         for n, amt in self.pressed_odds.items():
             spot = board[str(n)]
             if spot["come"] and spot["comeodds"]:
-                spot["comeodds"] = min(max(spot["comeodds"], amt), game.max_odds(n, spot["come"]))
-            if game.button == n and board["passline"] and board["passodds"]:
-                board["passodds"] = min(max(board["passodds"], amt), game.max_odds(n, board["passline"]))
+                spot["comeodds"] = max(spot["comeodds"], amt)
+            if self.crapgame.button == n and board["passline"] and board["passodds"]:
+                board["passodds"] = max(board["passodds"], amt)
 
 
     def chips_on_table(self):
