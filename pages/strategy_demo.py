@@ -7,6 +7,7 @@ from crapgame import CrapGame, SEATS
 from player import CrapsPlayer
 from strategies import strategy_registry
 from simulation import run_multiple_simulations
+from table_settings import table_settings
 
 # Title and description
 st.title("🎲 Craps Betting Strategy Simulator")
@@ -40,6 +41,11 @@ num_players = st.sidebar.number_input(
 cols = st.columns(num_players)
 
 debugmode = st.sidebar.checkbox("Enable Debug Mode", value=False)
+
+with st.sidebar.expander("Table limits"):
+    # Applied to the live game, so a change takes effect on the next bet.
+    for attr, val in table_settings().items():
+        setattr(st.session_state.crapgame, attr, val)
 
 # Player configuration section
 for i in range(num_players):

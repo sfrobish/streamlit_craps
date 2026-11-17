@@ -8,8 +8,12 @@ import plotly.express as px
 from crapgame import CrapGame, SEATS
 from strategies import strategy_registry
 from stats import get_statistics
+from table_settings import table_settings
 
 profiles = st.session_state.setdefault("profiles", {})
+
+with st.expander("Table limits"):
+    table = table_settings()
 
 # Number of rounds
 num_rounds = st.number_input(
@@ -58,7 +62,7 @@ if st.button("🎲 Run Simulation", type="primary"):
 
     with st.spinner("Running simulation..."):
         for n_sim in range(num_simulations):
-            game = CrapGame(tablemin=5,limit=1000,maxodds="3x4x5x")
+            game = CrapGame(**table)
             for i in range(num_players):
                 CrapsPlayer(  # __init__ seats itself via game.add_player
                     id=i+1,
