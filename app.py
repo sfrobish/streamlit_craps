@@ -30,7 +30,7 @@ def set_role():
 # Selectbox to choose role
 st.selectbox(
     "Select your role:",
-    [None, "user", "admin", "super-admin"],
+    [None, "user", "admin", "this doesn't do anything"],
     key="_role",
     on_change=set_role,
 )

@@ -86,13 +86,16 @@ for i in range(num_players):
             st.session_state.players[f"Player_{i+1}"] = player
         else:
             player = st.session_state.players[f"Player_{i+1}"]
+            player.strategy = strategy_type
+            
 
         if debugmode:
-            st.session_state.crapgame
-        
-        if player.player_board["passline"] == 0 and player.player_board["dontpassline"] == 0:
-            print(f"Player {i+1} Strategy: {strategy_type} about to place first bet")
+            player.board
+
+        ante = st.button("Place Bets", type="primary", key=f"place_bets_{i}")
+        if ante:
             player.place_bets()
+            st.rerun()
 
         st.markdown("**Bet Amounts**")
         for bet in player.player_board:
@@ -104,17 +107,26 @@ for i in range(num_players):
                 if player.player_board[bet] > 0:
                     st.write(f"{bet}: ${player.player_board[bet]}")
 
+        st.write(f"**Current Bet Total:** ${player.total_bet:.2f}")
         st.write(f"**Current Bankroll:** ${player.bankroll:.2f}")
+        st.write(f"**Sum:** ${player.bankroll + player.total_bet:.2f}")
 
 
 st.markdown("---")
 st.write(f"Button = {st.session_state.crapgame.button}")
 # Single roll button
-tosscol, resetcol, unused = st.columns([1,1,7])
+tosscol, setcol, resetcol, unused = st.columns([1,1,1,6])
+
+die1, die2 = None, None
+if setcol.toggle("📌 Set Dice", value=False):
+    die1 = setcol.slider("Die 1", min_value=1, max_value=6, key="set_die1")
+    die2 = setcol.slider("Die 2", min_value=1, max_value=6, key="set_die2")
+
 if tosscol.button("🎲 Toss Dice", type="primary"):
-    rolldict = st.session_state.crapgame.play_toss()
+    rolldict = st.session_state.crapgame.play_toss(die1, die2)
     st.session_state.rollhistory.append(rolldict)
     st.rerun()
+   
     
 if resetcol.button("🔄 Reset Game"):
     st.session_state.crapgame = CrapGame()
@@ -130,13 +142,11 @@ if "rollhistory" in st.session_state:
 else:
     st.session_state.rollhistory = []
 
-if st.session_state.crapgame.button != 'off' and st.session_state.crapgame.roll == 7:
+if st.session_state.rollhistory and st.session_state.rollhistory[-1].get("sevenout"):
     placeholder = st.empty()
     with placeholder.container():
         st.write("Seven out! New shooter coming up.")
         time.sleep(7)
     placeholder.empty()
-    st.session_state.crapgame.button = 'off'
-    st.session_state.crapgame.roll = None
     st.session_state.rollhistory = []
     st.rerun()

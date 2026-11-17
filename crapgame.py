@@ -1,24 +1,32 @@
+import copy
 import random
 import polars as pl
 
 from player import CrapsPlayer
 from stats import collist, house_board_to_df
 
+NUMBERS = [4, 5, 6, 8, 9, 10]
+TRUE_ODDS = {4: 2, 10: 2, 5: 3/2, 9: 3/2, 6: 6/5, 8: 6/5}      # pass / come odds
+LAY_ODDS = {4: 1/2, 10: 1/2, 5: 2/3, 9: 2/3, 6: 5/6, 8: 5/6}   # don't pass / don't come odds
+PLACE_ODDS = {4: 9/5, 10: 9/5, 5: 7/5, 9: 7/5, 6: 7/6, 8: 7/6}
+
+
 
 class CrapGame:
     """The game offerred by the casino."""
     
-    def __init__(self, tablemin = 5, limit = 1000, maxodds = "3x4x5x", seed = None):
+    def __init__(self, tablemin = 5.0, limit = 1000, maxodds = "3x4x5x", seed = None):
         """Initialize the craps game.
         
         Args:
             seed: Optional random seed for reproducibility
         """
-        if seed is not None:
-            random.seed(seed)
+        # if seed is None:
+            # seed = random.seed()
         self.tablemin = tablemin
         self.limit = limit
         self.maxodds = maxodds
+        self.roundnum = 0
         self.button = "off"
         self.roll = None
         self.players = []
@@ -120,14 +128,16 @@ class CrapGame:
                     self.board[bet][id] = player_board[bet]
 
 
-    def roll_dice(self):
+    def roll_dice(self, die1=None, die2=None) -> dict:
         """Roll two dice and return the results.  This a function of the table because the house hands out the dice and the house reads a valid roll.
         
         Returns:
             Tuple of (die1, die2, total)
         """
-        die1 = random.randint(1, 6)
-        die2 = random.randint(1, 6)
+        if die1 is None:
+            die1 = random.randint(1, 6)
+        if die2 is None:
+            die2 = random.randint(1, 6)
         total = die1 + die2
         self.roll = total
         
@@ -144,283 +154,118 @@ class CrapGame:
             self.button = 'off'
 
 
-    def pay_even_money(self, roll, bet_type):
+    def _settle(self, key, num=None, mult=None, label=None):
+        """Settle one bet type for every seat and clear it from the board.
 
-        if bet_type in ['passline', 'comeline', 'dontpassline', 'dontcomeline']:
-            for pos in range(len(self.board[bet_type])):
-                if self.board[bet_type][pos] is not None and self.board[bet_type][pos] > 0:
-                    self.players[pos].bankroll += self.board[bet_type][pos] * 2
-                    self.board[bet_type][pos] = 0
-                    self.players[pos].player_board[bet_type] = 0
-        elif bet_type in ['come', 'dontcome']:
-            for pos in range(len(self.board[f"{roll}"][bet_type])):
-                if self.board[f"{roll}"][bet_type][pos] is not None and self.board[f"{roll}"][bet_type][pos] > 0:
-                    self.players[pos].bankroll += self.board[f"{roll}"][bet_type][pos] * 2
-                    self.board[f"{roll}"][bet_type][pos] = 0
-                    self.players[pos].player_board[f"{roll}"][bet_type] = 0
-            
-
-    def pay_place(self, roll):
-
-        if roll in [4, 10]:
-            paymult = 9/5
-        elif roll in [5, 9]:
-            paymult = 7/5
-        elif roll in [6, 8]:
-            paymult = 7/6
-
-        for pos in range(len(self.board[f"{roll}"]["place"])):
-            if self.board[f"{roll}"]["place"][pos] is not None and self.board[f"{roll}"]["place"][pos] > 0:
-                self.players[pos].bankroll += self.board[f"{roll}"]["place"][pos] + (self.board[f"{roll}"]["place"][pos] * paymult)
-                self.board[f"{roll}"]["place"][pos] = 0
-                self.players[pos].player_board[f"{roll}"]["place"] = 0
-
-    
-    def pay_odds(self, roll, is_come=True):
-
-        if roll in [4, 10]:
-            paymult = 2
-        elif roll in [5, 9]:
-            paymult = 3/2
-        elif roll in [6, 8]:
-            paymult = 6/5
-
-        if is_come:
-            for pos in range(len(self.board[f"{roll}"]["comeodds"])):
-                if self.board[f"{roll}"]["comeodds"][pos] is not None and self.board[f"{roll}"]["comeodds"][pos] > 0:
-                    self.players[pos].bankroll += self.board[f"{roll}"]["comeodds"][pos] + (self.board[f"{roll}"]["comeodds"][pos] * paymult)
-                    self.board[f"{roll}"]["comeodds"][pos] = 0
-                    self.players[pos].player_board[f"{roll}"]["comeodds"] = 0
-        else:
-            for pos in range(len(self.board["passodds"])):
-                if self.board["passodds"][pos] is not None and self.board["passodds"][pos] > 0:
-                    self.players[pos].bankroll += self.board["passodds"][pos] + (self.board["passodds"][pos] * paymult)
-                    self.board["passodds"][pos] = 0
-                    self.players[pos].player_board["passodds"] = 0
-
-
-    def pay_darkside_odds(self):
-
-        for num in [4,5,6,8,9,10]:
-            
-            if num in [4, 10]:
-                paymult = 1/2
-            elif num in [5, 9]:
-                paymult = 2/3
-            elif num in [6, 8]:
-                paymult = 5/6
-
-            for pos in range(len(self.board[f"{num}"]["dontcomeodds"])):
-                if self.board[f"{num}"]["dontcomeodds"][pos] is not None and self.board[f"{num}"]["dontcomeodds"][pos] > 0:
-                    self.players[pos].bankroll += self.board[f"{num}"]["dontcomeodds"][pos] + (self.board[f"{num}"]["dontcomeodds"][pos] * paymult)
-                    self.board[f"{num}"]["dontcomeodds"][pos] = 0
-                    self.players[pos].player_board[f"{num}"]["dontcomeodds"] = 0
-            for pos in range(len(self.board["dontpassodds"])):
-                if self.board["dontpassodds"][pos] is not None and self.board["dontpassodds"][pos] > 0:
-                    self.players[pos].bankroll += self.board["dontpassodds"][pos] + (self.board["dontpassodds"][pos] * paymult)
-                    self.board["dontpassodds"][pos] = 0
-                    self.players[pos].player_board["dontpassodds"] = 0
-
-
-    def settle_bets(self, rolldict) -> dict:
-        """Play one round of craps (may involve multiple rolls).
-        
-        Returns:
-            Dictionary containing round results with keys:
-            - rolls: list of (die1, die2, total) tuples
-            - outcome: 'win' or 'lose' for pass line bet
-            - point: the point that was established (if any)
+        mult=None: bet loses.  mult=0: push (stake returned).
+        Otherwise pays stake + stake * mult.
         """
-        
-        roll = rolldict["total"]
-        button = self.button
-
-        if button == 'off' and roll in [7, 11]:
-            # Front line wins
-            for pos in range(len(self.board["passline"])):
-                if self.board["passline"][pos] is not None and self.board["passline"][pos] > 0:
-                    self.pay_even_money(roll, "passline")
-                if self.board["passodds"][pos] is not None and self.board["passodds"][pos] > 0:
-                    self.pay_odds(roll, is_come=False)
-            # Come line bets shouldn't be out if the button is off
-
-            # Established come bets lose - not offering to turn them off for now
-            if roll == 7:
-                for boardnum in [4, 5, 6, 8, 9, 10]:
-                    for pos in range(len(self.board[f"{boardnum}"]["come"])):
-                        if self.board[f"{boardnum}"]["come"][pos] is not None and self.board[f"{boardnum}"]["come"][pos] > 0:
-                            self.board[f"{boardnum}"]["come"][pos] = 0
-                            self.players[pos].player_board[f"{boardnum}"]["come"] = 0
-                    for pos in range(len(self.board[f"{boardnum}"]["comeodds"])):
-                        if self.board[f"{boardnum}"]["comeodds"][pos] is not None and self.board[f"{boardnum}"]["comeodds"][pos] > 0:
-                            self.board[f"{boardnum}"]["comeodds"][pos] = 0
-                            self.players[pos].player_board[f"{boardnum}"]["comeodds"] = 0
-
-            # Dark side loses
-            for pos in range(len(self.board["dontpassline"])):
-                if self.board["dontpassline"][pos] is not None and self.board["dontpassline"][pos] > 0:
-                    self.board["dontpassline"][pos] = 0
-                    self.players[pos].player_board["dontpassline"] = 0
-            
-
-        elif button == 'off' and roll in [2, 3, 12]:
-            # Front line loses
-            for pos in range(len(self.board["passline"])):
-                if self.board["passline"][pos] is not None and self.board["passline"][pos] > 0:
-                    self.board["passline"][pos] = 0
-                    self.players[pos].player_board["passline"] = 0
-            # Come bets shouldn't be out if the button is off
-
-            # Bar 12 pushes on don't pass
-            if roll == 12:
-                for pos in range(len(self.board["dontpassline"])):
-                    if self.board["dontpassline"][pos] is not None and self.board["dontpassline"][pos] > 0:
-                        self.players[pos].bankroll += self.board["dontpassline"][pos]
-                        self.board["dontpassline"][pos] = 0
-                        self.players[pos].player_board["dontpassline"] = 0
+        spots = self.board[key] if num is None else self.board[str(num)][key]
+        for pos, amt in enumerate(spots):
+            if not amt:  # None or 0
+                continue
+            if mult is not None:
+                self.players[pos].take_payout(label, float(amt + amt * mult))
+            spots[pos] = 0.0
+            pboard = self.players[pos].player_board
+            if num is None:
+                pboard[key] = 0.0
             else:
-                for pos in range(len(self.board["dontpassline"])):
-                    if self.board["dontpassline"][pos] is not None and self.board["dontpassline"][pos] > 0:
-                        self.pay_even_money(roll, "dontpassline")
-            # Don't come bets shouldn't be out if the button is off
-            
-        elif button == 'off' and roll in [4, 5, 6, 8, 9, 10]:
-            # We are assuing place bets come "off" when the point is not set
-            # There is an enhancment to the bet strategy that leaves place bets on during the come-out
-            
-            # self.pay_place(roll)
+                pboard[str(num)][key] = 0.0
 
-            # Comebets made prior to the point being hit get paid
-            self.pay_odds(roll) 
 
-            # Dark side don't come on the number loses
-            for pos in range(len(self.board[f"{roll}"]["dontcome"])):
-                if self.board[f"{roll}"]["dontcome"][pos] is not None and self.board[f"{roll}"]["dontcome"][pos] > 0:
-                    self.board[f"{roll}"]["dontcome"][pos] = 0
-                    self.players[pos].player_board[f"{roll}"]["dontcome"] = 0
+    def _move(self, line, num, key):
+        """Move a come / don't come line bet onto its number."""
+        for pos, amt in enumerate(self.board[line]):
+            if not amt:
+                continue
+            self.board[str(num)][key][pos] = amt
+            self.board[line][pos] = 0.0
+            pboard = self.players[pos].player_board
+            pboard[str(num)][key] = pboard[line]
+            pboard[line] = 0.0
 
-            # Set the button
-            self.button = roll
 
-        elif button != 'off' and roll == 7:
-            # Collect the losing bets
-            for pos in range(len(self.board["passline"])):
-                if self.board["passline"][pos] is not None and self.board["passline"][pos] > 0:
-                    self.board["passline"][pos] = 0
-                    self.players[pos].player_board["passline"] = 0
-            for pos in range(len(self.board["passodds"])):
-                if self.board["passodds"][pos] is not None and self.board["passodds"][pos] > 0:
-                    self.board["passodds"][pos] = 0
-                    self.players[pos].player_board["passodds"] = 0
-            for boardnum in [4, 5, 6, 8, 9, 10]:
-                for pos in range(len(self.board[f"{boardnum}"]["place"])):
-                    if self.board[f"{boardnum}"]["place"][pos] is not None and self.board[f"{boardnum}"]["place"][pos] > 0:
-                        self.board[f"{boardnum}"]["place"][pos] = 0
-                        self.players[pos].player_board[f"{boardnum}"]["place"] = 0
-                for pos in range(len(self.board[f"{boardnum}"]["come"])):
-                    if self.board[f"{boardnum}"]["come"][pos] is not None and self.board[f"{boardnum}"]["come"][pos] > 0:
-                        self.board[f"{boardnum}"]["come"][pos] = 0
-                        self.players[pos].player_board[f"{boardnum}"]["come"] = 0
-                for pos in range(len(self.board[f"{boardnum}"]["comeodds"])):
-                    if self.board[f"{boardnum}"]["comeodds"][pos] is not None and self.board[f"{boardnum}"]["comeodds"][pos] > 0:
-                        self.board[f"{boardnum}"]["comeodds"][pos] = 0
-                        self.players[pos].player_board[f"{boardnum}"]["comeodds"] = 0
-            # Pay the comeline bets
-            for pos in range(len(self.board["comeline"])):
-                if self.board["comeline"][pos] is not None and self.board["comeline"][pos] > 0:
-                    self.pay_even_money(roll, "comeline")
+    def settle_bets(self, rolldict):
+        """Settle every bet on the board for one roll and move the button."""
+        roll = rolldict["total"]
+        point = self.button
 
-            # The dark side wins
-            for pos in range(len(self.board["dontpassline"])):
-                if self.board["dontpassline"][pos] is not None and self.board["dontpassline"][pos] > 0:
-                    self.pay_even_money(roll, "dontpassline")
-            self.pay_darkside_odds()
-            # The dark side wins on all the dont come bets    
+        if point == 'off':
+            # Come-out roll. Place bets and come odds are off; don't come odds work.
+            if roll in (7, 11):
+                self._settle("passline", mult=1, label="passlinewon")
+                self._settle("dontpassline")
+                if roll == 7:
+                    for n in NUMBERS:
+                        self._settle("come", n)
+                        self._settle("comeodds", n, mult=0, label=f"come{n}oddswon")
+                        self._settle("dontcome", n, mult=1, label=f"dontcome{n}won")
+                        self._settle("dontcomeodds", n, mult=LAY_ODDS[n], label=f"dontcome{n}oddswon")
+            elif roll in (2, 3, 12):
+                self._settle("passline")
+                self._settle("dontpassline", mult=0 if roll == 12 else 1, label="dontpasslinewon")
+            else:
+                self._settle("come", roll, mult=1, label=f"come{roll}won")
+                self._settle("comeodds", roll, mult=0, label=f"come{roll}oddswon")
+                self._settle("dontcome", roll)
+                self._settle("dontcomeodds", roll)
+                self.button = roll
+            return
 
-            # Don't come loses
-            for pos in range(len(self.board["dontcomeline"])):
-                if self.board["dontcomeline"][pos] is not None and self.board["dontcomeline"][pos] > 0:
-                    self.board["dontcomeline"][pos] = 0
-                    self.players[pos].player_board["dontcomeline"] = 0
-
-        elif button != 'off' and roll == 11:
-            # Pay the comeline only
-            for pos in range(len(self.board["comeline"])):
-                if self.board["comeline"][pos] is not None and self.board["comeline"][pos] > 0:
-                    self.pay_even_money(roll, "comeline")
-
-            # Don't come loses
-            for pos in range(len(self.board["dontcomeline"])):
-                if self.board["dontcomeline"][pos] is not None and self.board["dontcomeline"][pos] > 0:
-                    self.board["dontcomeline"][pos] = 0
-                    self.players[pos].player_board["dontcomeline"] = 0        
-        
-        elif button != 'off' and roll != button and roll in [4, 5, 6, 8, 9, 10]:
-            # Pay the place/come
-            self.pay_place(roll)
-            self.pay_odds(roll)
-            # Now deal with the come line bet moving.  Player strategy will have to add odds
-            for pos in range(len(self.board["comeline"])):
-                if self.board["comeline"][pos] is not None and self.board["comeline"][pos] > 0:
-                    self.board[f"{roll}"]["come"][pos] = self.board["comeline"][pos]
-                    self.board["comeline"][pos] = 0
-                    self.players[pos].player_board[f"{roll}"]["come"] = self.players[pos].player_board["comeline"]
-                    self.players[pos].player_board["comeline"] = 0
-
-            # Don't come bets lose on the number
-            for pos in range(len(self.board[f"{roll}"]["dontcome"])):
-                if self.board[f"{roll}"]["dontcome"][pos] is not None and self.board[f"{roll}"]["dontcome"][pos] > 0:
-                    self.board[f"{roll}"]["dontcome"][pos] = 0
-                    self.players[pos].player_board[f"{roll}"]["dontcome"] = 0
-                if self.board[f"{roll}"]["dontcomeodds"][pos] is not None and self.board[f"{roll}"]["dontcomeodds"][pos] > 0:
-                    self.board[f"{roll}"]["dontcomeodds"][pos] = 0
-                    self.players[pos].player_board[f"{roll}"]["dontcomeodds"] = 0
-            # Don't come bets move to the number
-            for pos in range(len(self.board["dontcomeline"])):
-                if self.board["dontcomeline"][pos] is not None and self.board["dontcomeline"][pos] > 0:
-                    self.board[f"{roll}"]["dontcome"][pos] = self.board["dontcomeline"][pos]
-                    self.board["dontcomeline"][pos] = 0
-                    self.players[pos].player_board[f"{roll}"]["dontcome"] = self.players[pos].player_board["dontcomeline"]
-                    self.players[pos].player_board["dontcomeline"] = 0
-        
-        elif button != 'off' and roll == button:
-            # Pay the pass line and odds
-            for pos in range(len(self.board["passline"])):
-                if self.board["passline"][pos] is not None and self.board["passline"][pos] > 0:
-                    self.pay_even_money(roll, "passline")
-            self.pay_odds(button, is_come=False)
-
-            # Move the come line bets to the number
-            for pos in range(len(self.board["comeline"])):
-                if self.board["comeline"][pos] is not None and self.board["comeline"][pos] > 0:
-                    self.board[f"{roll}"]["come"][pos] = self.board["comeline"][pos]
-                    self.board["comeline"][pos] = 0
-                    self.players[pos].player_board[f"{roll}"]["come"] = self.players[pos].player_board["comeline"]
-                    self.players[pos].player_board["comeline"] = 0
-
-            # Don't pass loses
-            for pos in range(len(self.board["dontpassline"])):
-                if self.board["dontpassline"][pos] is not None and self.board["dontpassline"][pos] > 0:
-                    self.board["dontpassline"][pos] = 0
-                    self.players[pos].player_board["dontpassline"] = 0
-            for pos in range(len(self.board["dontpassodds"])):
-                if self.board["dontpassodds"][pos] is not None and self.board["dontpassodds"][pos] > 0:
-                    self.board["dontpassodds"][pos] = 0
-                    self.players[pos].player_board["dontpassodds"] = 0
-
-            # Reset the button
+        if roll == 7:
+            # Seven-out
+            self._settle("passline")
+            self._settle("passodds")
+            for n in NUMBERS:
+                self._settle("place", n)
+                self._settle("come", n)
+                self._settle("comeodds", n)
+                self._settle("dontcome", n, mult=1, label=f"dontcome{n}won")
+                self._settle("dontcomeodds", n, mult=LAY_ODDS[n], label=f"dontcome{n}oddswon")
+            self._settle("dontpassline", mult=1, label="dontpasslinewon")
+            self._settle("dontpassodds", mult=LAY_ODDS[point], label="dontpassoddswon")
+            self._settle("comeline", mult=1, label="comelinewon")
+            self._settle("dontcomeline")
             self.button = 'off'
+        elif roll == 11:
+            self._settle("comeline", mult=1, label="comelinewon")
+            self._settle("dontcomeline")
+        elif roll in (2, 3, 12):
+            self._settle("comeline")
+            self._settle("dontcomeline", mult=0 if roll == 12 else 1, label="dontcomelinewon")
+        else:
+            # Box number: bets on that number settle, then line bets travel to it.
+            self._settle("place", roll, mult=PLACE_ODDS[roll], label=f"place{roll}won")
+            self._settle("come", roll, mult=1, label=f"come{roll}won")
+            self._settle("comeodds", roll, mult=TRUE_ODDS[roll], label=f"come{roll}oddswon")
+            self._settle("dontcome", roll)
+            self._settle("dontcomeodds", roll)
+            if roll == point:
+                self._settle("passline", mult=1, label="passlinewon")
+                self._settle("passodds", mult=TRUE_ODDS[roll], label="passoddswon")
+                self._settle("dontpassline")
+                self._settle("dontpassodds")
+                self.button = 'off'
+            self._move("comeline", roll, "come")
+            self._move("dontcomeline", roll, "dontcome")
 
-    def play_toss(self):
+
+    def play_toss(self, die1=None, die2=None) -> dict:
         """
-            Play one toss of the dice
+            Play one toss of the dice. We want the initial bet to be placed when the player first joins the game.  That is why we bet last.
         """
-        # We want the initial bet to be placed when the player first joins the game.  That is why we bet last.
-        rolldict = self.roll_dice()
-        self.settle_bets(rolldict)
-        if self.button == 'off' or rolldict['total'] != 7:
+        if self.roundnum > 0:
+            # Save stats and state of board if it exists
             for player in self.players:
-                print(f"Betting for player {player.id}")  # --- IGNORE ---
-                player.place_bets()
+                player.record_round(self.roundnum)
+        self.roundnum += 1
+        point = self.button
+        rolldict = self.roll_dice(die1, die2)
+        self.settle_bets(rolldict)
+        rolldict["sevenout"] = point != 'off' and rolldict["total"] == 7
+        # Bet after every roll, including a seven-out (bets for the next shooter's come-out).
+        for player in self.players:
+            player.place_bets()
 
         return rolldict
