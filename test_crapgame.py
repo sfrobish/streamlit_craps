@@ -512,3 +512,66 @@ class TestOddsPress(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLinePlusTwoMax(CrapsTest):
+    """Issues #2 / #3: pass + 2 come with max odds, and its don't-side mirror."""
+
+    LIGHT = ("passline", "passodds", "comeline", "come", "comeodds")
+    DARK = ("dontpassline", "dontpassodds", "dontcomeline", "dontcome", "dontcomeodds")
+
+    def strat(self, dark):
+        from strategies import pass_two_come_max_odds, dont_pass_two_dont_come_max_lay
+        return dont_pass_two_dont_come_max_lay if dark else pass_two_come_max_odds
+
+    def test_comeout_only_line_bet(self):
+        for dark, (line, line_odds, come_line, *_ ) in ((False, self.LIGHT), (True, self.DARK)):
+            with self.subTest(dark=dark):
+                self.setUp()
+                board = self.p.player_board
+                self.strat(dark)(board, self.g, None)
+                self.assertEqual((board[line], board[line_odds], board[come_line]), (5.0, 0.0, 0.0))
+
+    def test_odds_follow_table_maxodds(self):
+        for maxodds in ("2x", "3x4x5x", "10x"):
+            for dark, (line, line_odds, come_line, come, come_odds) in ((False, self.LIGHT), (True, self.DARK)):
+                with self.subTest(maxodds=maxodds, dark=dark):
+                    self.setUp()
+                    self.g.maxodds = maxodds
+                    self.g.button = 4
+                    board = self.p.player_board
+                    board[line] = 5.0
+                    board["9"][come] = 5.0
+                    self.strat(dark)(board, self.g, None)
+                    cap = self.g.max_lay if dark else self.g.max_odds
+                    self.assertEqual(board[line_odds], cap(4, 5.0))
+                    self.assertEqual(board["9"][come_odds], cap(9, 5.0))
+                    self.g.take_bets(board, 1)  # house leaves max odds untouched
+                    self.assertEqual(board["9"][come_odds], cap(9, 5.0))
+
+    def test_stops_at_two_come_bets(self):
+        for dark, (line, _, come_line, come, _) in ((False, self.LIGHT), (True, self.DARK)):
+            with self.subTest(dark=dark):
+                self.setUp()
+                self.g.button = 6
+                board = self.p.player_board
+                board[line] = 5.0
+                board["5"][come] = 5.0
+                self.strat(dark)(board, self.g, None)
+                self.assertEqual(board[come_line], 5.0)    # one working: add another
+                board[come_line] = 0.0
+                board["9"][come] = 5.0
+                self.strat(dark)(board, self.g, None)
+                self.assertEqual(board[come_line], 0.0)    # two working: stop
+
+    def test_nothing_else_placed(self):
+        for dark in (False, True):
+            with self.subTest(dark=dark):
+                self.setUp()
+                self.g.button = 8
+                board = self.p.player_board
+                self.strat(dark)(board, self.g, None)
+                for n in NUMBERS:
+                    self.assertEqual(board[str(n)]["place"], 0.0)
+                other = self.LIGHT if dark else self.DARK
+                self.assertEqual([board[k] for k in other[:3]], [0.0, 0.0, 0.0])
