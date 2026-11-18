@@ -10,37 +10,44 @@ MONEY = "(,.2f"  # d3 format: negatives as (100.00)
 DICE_ODDS = {t: (6 - abs(t - 7)) / 36 for t in range(2, 13)}
 
 
-def run_batch(table, seats, num_sims, num_shooters):
+def run_batch(table, seats, num_sims, num_shooters=None, num_rolls=None):
     """Play num_sims sessions. seats: list of (strategy, bankroll, profile).
+
+    A session ends after num_shooters seven-outs or, if num_rolls is given, after that many
+    rolls (possibly mid-hand; chips still on the table count toward equity).
 
     Returns (rolls, sessions):
       rolls    one row per toss per player: sim, roll, shooter, roll_in_shooter, total, player, equity, exposure
-      sessions one row per sim per player: net, max_drawdown, peak_exposure, start
+      sessions one row per sim per player: net, max_drawdown, peak_exposure, low_point
     """
     rows = []
     for sim in range(num_sims):
         game = CrapGame(**table)
         players = [CrapsPlayer(id=i + 1, crapgame=game, strategy=s, starting_bankroll=b, profile=p)
                    for i, (s, b, p) in enumerate(seats)]
-        roll = 0
-        for shooter in range(num_shooters):
-            k = 0
-            while True:
-                r = game.play_toss()
-                roll += 1
-                k += 1
-                for pl_ in players:
-                    rows.append({
-                        "sim": sim, "roll": roll, "shooter": shooter, "roll_in_shooter": k,
-                        "total": r["total"], "player": f"P{pl_.id}: {pl_.strategy}",
-                        "start": float(pl_.starting_bankroll),
-                        "equity": pl_.bankroll + pl_.chips_on_table(),
-                        "exposure": pl_.chips_on_table(),
-                    })
-                if r["sevenout"]:
-                    break
+        roll = shooter = k = 0
+        while (roll < num_rolls) if num_rolls else (shooter < num_shooters):
+            r = game.play_toss()
+            roll += 1
+            k += 1
+            for pl_ in players:
+                rows.append({
+                    "sim": sim, "roll": roll, "shooter": shooter, "roll_in_shooter": k,
+                    "total": r["total"], "player": f"P{pl_.id}: {pl_.strategy}",
+                    "start": float(pl_.starting_bankroll),
+                    "equity": pl_.bankroll + pl_.chips_on_table(),
+                    "exposure": pl_.chips_on_table(),
+                })
+            if r["sevenout"]:
+                shooter += 1
+                k = 0
     rolls = pl.DataFrame(rows)
-    sessions = (
+    return rolls, session_stats(rolls)
+
+
+def session_stats(rolls):
+    """One row per sim per player from the roll-by-roll equity."""
+    return (
         rolls.sort("sim", "player", "roll")
         .with_columns(peak=pl.col("equity").cum_max().over("sim", "player"))
         .group_by("sim", "player")
@@ -52,7 +59,6 @@ def run_batch(table, seats, num_sims, num_shooters):
         )
         .sort("sim", "player")
     )
-    return rolls, sessions
 
 
 def _color(players):
@@ -150,7 +156,6 @@ def drawdown_vs_result(sessions):
     ).properties(height=360)
 
 
-
 def exposure_by_roll(rolls, cap=25):
     """Average chips on the table at each roll of a shooter's hand."""
     players = sorted(rolls["player"].unique())
@@ -178,9 +183,14 @@ def dice_frequency(rolls):
     return (bars + ticks).properties(height=280)
 
 
-def summary(sessions):
-    """Per-player headline numbers across all sessions."""
-    return sessions.group_by("player").agg(
+def summary(rolls):
+    """Per-player headline numbers across all sessions, plus an 'All seats' row when 2+ seats.
+    The pooled row is computed from the combined chip stack, so its drawdown and low point
+    are the team's, not the seats' figures added up."""
+    sessions = session_stats(rolls)
+    if sessions["player"].n_unique() > 1:
+        sessions = pl.concat([sessions, session_stats(all_seats(rolls)).select(sessions.columns)])
+    return sessions.group_by("player", maintain_order=True).agg(
         sessions=pl.len(),
         pct_ahead=(pl.col("net") > 0).mean() * 100,
         median_net=pl.col("net").median(),
@@ -189,21 +199,37 @@ def summary(sessions):
         avg_max_drawdown=pl.col("max_drawdown").mean(),
         worst_low_point=pl.col("low_point").min(),
         max_exposure=pl.col("peak_exposure").max(),
-    ).sort("player")
+    )
 
 
 if __name__ == "__main__":
     table = {"tablemin": 5.0, "limit": 1000.0, "maxodds": "3x4x5x"}
     rolls, sessions = run_batch(table, [("Pass/Come 2x Place 6&8", 1000, None)], 5, 10)
-    # equity bookkeeping: summed per-shooter nets must equal session net
+    # equity bookkeeping: summed per-roll changes must equal session net
     s = sessions.sort("sim")["net"].to_list()
     per = (rolls.sort("sim", "roll").with_columns(prev=pl.col("equity").shift(1).over("sim").fill_null(pl.col("start")))
            .group_by("sim").agg((pl.col("equity") - pl.col("prev")).sum()).sort("sim")["equity"].to_list())
     assert all(abs(a - b) < 1e-6 for a, b in zip(s, per)), (s, per)
     assert len(sessions) == 5 and rolls["shooter"].max() == 9
+    assert summary(rolls)["player"].to_list() == ["P1: Pass/Come 2x Place 6&8"]  # no pooled row for one seat
+
+    # #9: session length in rolls
+    r2, s2 = run_batch(table, [("Pass/Come 2x Place 6&8", 1000, None)], 4, num_rolls=37)
+    assert r2.group_by("sim").agg(pl.col("roll").max())["roll"].to_list() == [37] * 4
+
+    # #10: pooled row = combined stack; net sums, drawdown is the team's (<= sum of seats')
+    seats = [("Pass/Come 2x Place 6&8", 1000, None), ("Dark Side 3", 500, None)]
+    r3, s3 = run_batch(table, seats, 6, 5)
+    t = summary(r3)
+    assert t["player"].to_list()[-1] == "All seats" and t["sessions"].to_list() == [6, 6, 6]
+    pooled = session_stats(all_seats(r3))
+    assert ((pooled["net"] - s3.group_by("sim").agg(pl.col("net").sum()).sort("sim")["net"]).abs() < 1e-6).all()
+    seat_dd = s3.group_by("sim").agg(pl.col("max_drawdown").sum()).sort("sim")["max_drawdown"]
+    assert (pooled["max_drawdown"] <= seat_dd + 1e-6).all()
+
     for f in (equity_paths, equity_by_shooter, exposure_by_roll, dice_frequency):
         f(rolls).to_dict()
-    for f in (final_distribution, drawdown_vs_result):
+    for f in (final_distribution, drawdown_vs_result, team_across_sessions):
         f(sessions).to_dict()
-    print(summary(sessions))
+    print(t)
     print("ok")
