@@ -5,7 +5,7 @@ import polars as pl
 
 from crapgame import CrapGame, SEATS
 from player import CrapsPlayer
-from strategies import strategy_registry
+from strategies import PRESETS, strategy_registry
 from simulation import run_multiple_simulations
 from table_settings import table_settings
 
@@ -86,7 +86,7 @@ for i in range(num_players):
         else:
             player = st.session_state.players[f"Player_{i+1}"]
             player.strategy = strategy_type
-            player.profile = profiles.get(strategy_type)
+            player.profile = profiles.get(strategy_type) or PRESETS.get(strategy_type)
             
 
         if debugmode:

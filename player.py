@@ -4,7 +4,7 @@ Player of craps - controls the bet strategy and stores the outcome of all wagers
 import copy
 import polars as pl
 
-from strategies import strategy_registry
+from strategies import PRESETS, strategy_registry
 from stats import collist, player_round_row
 
 
@@ -24,7 +24,7 @@ class CrapsPlayer:
         self.id = id
         self.crapgame = crapgame
         self.strategy = strategy
-        self.profile = profile
+        self.profile = profile or PRESETS.get(strategy)
         self.pressed_odds = {}  # number -> odds size after pressing, this shooter
         self.pressed_flat = 0.0  # extra come-line flat from come wins (profile flat_press_units), this shooter
         self.starting_bankroll = starting_bankroll

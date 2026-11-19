@@ -607,3 +607,26 @@ class TestHedgeLadder(unittest.TestCase):
         g.play_toss(4, 3)                  # seven-out resets the press
         g.play_toss(2, 2)                  # new point 4
         self.assertEqual(a.player_board["comeline"], 5.0)
+
+    def test_each_rung_is_one_strategy_matching_the_two_seat_duo(self):
+        """A rung played from one seat nets the same as its light + dark pair on the same dice."""
+        rungs = {
+            "Hedge 1: Flat Mirror": ("Pass + 2 Come, No Odds", "Don't Pass + 2 Don't Come, Flat", None),
+            "Hedge 3: Light Max Odds": ("Pass + 2 Come, Max Odds", "Don't Pass + 2 Don't Come, Flat", None),
+            "Hedge 5: Light 1x Odds, Press 2u": ("Pass + 2 Come, 1x Odds", "Don't Pass + 2 Don't Come, Flat",
+                                                  {"base_strategy": "Pass + 2 Come, 1x Odds", "odds_press_units": 2}),
+            "Hedge 7: Max Odds Both Sides": ("Pass + 2 Come, Max Odds", "Don't Pass + 2 Don't Come, Max Lay", None),
+        }
+        worth = lambda *ps: sum(p.bankroll + p.chips_on_table() for p in ps)
+        for rung, (light, dark, profile) in rungs.items():
+            with self.subTest(rung):
+                random.seed(3)
+                g = CrapGame()
+                one = CrapsPlayer(1, g, rung, 2000)
+                for _ in range(3000):
+                    g.play_toss()
+                random.seed(3)
+                g, a, b = self.seat(light, dark, profile)
+                for _ in range(3000):
+                    g.play_toss()
+                self.assertAlmostEqual(worth(one), worth(a, b))

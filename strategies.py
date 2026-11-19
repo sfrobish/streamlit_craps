@@ -225,3 +225,36 @@ def pass_two_come_1x_odds(board, game, prevboard):
 def dont_pass_two_dont_come_flat(board, game, prevboard):
     """Mirror of the 'Pass + 2 Come' family with no lay odds: the flat hedge for the light side."""
     return _line_plus_two(board, game, "dontpassline", "dontpassodds", "dontcomeline", "dontcome", "dontcomeodds", NO_ODDS)
+
+
+# Issue #4 hedge ladder: one strategy per rung, both sides on one board, flats mirrored.
+# Each odds(game) returns the odds(num, flat) callable _line_plus_two expects.
+ONE_X = lambda game: lambda num, flat: min(flat, game.max_odds(num, flat))
+MAX_ODDS = lambda game: game.max_odds
+MAX_LAY = lambda game: game.max_lay
+NONE = lambda game: NO_ODDS
+
+
+def _hedge(light_odds, dark_odds):
+    def strategy(board, game, prevboard):
+        board, light = _line_plus_two(board, game, "passline", "passodds", "comeline", "come", "comeodds", light_odds(game))
+        board, dark = _line_plus_two(board, game, "dontpassline", "dontpassodds", "dontcomeline", "dontcome", "dontcomeodds", dark_odds(game))
+        return board, light + dark
+    return strategy
+
+
+HEDGE_FLAT, HEDGE_1X, HEDGE_MAX = "Hedge 1: Flat Mirror", "Hedge 2: Light 1x Odds", "Hedge 3: Light Max Odds"
+add_strategy(HEDGE_FLAT)(_hedge(NONE, NONE))
+add_strategy(HEDGE_1X)(_hedge(ONE_X, NONE))
+add_strategy(HEDGE_MAX)(_hedge(MAX_ODDS, NONE))
+add_strategy("Hedge 7: Max Odds Both Sides")(_hedge(MAX_ODDS, MAX_LAY))
+
+# Rungs 4-6 press, which lives in the player as a profile; CrapsPlayer picks these up by name.
+# Only the light side presses; dark flats stay 1 unit on purpose (per #4 discussion).
+PRESETS = {
+    "Hedge 4: Light 1x Odds, Press 1u": {"base_strategy": HEDGE_1X, "odds_press_units": 1},
+    "Hedge 5: Light 1x Odds, Press 2u": {"base_strategy": HEDGE_1X, "odds_press_units": 2},
+    "Hedge 6: Light Max Odds, Press Come Flats 1u": {"base_strategy": HEDGE_MAX, "flat_press_units": 1},
+}
+for _name, _p in PRESETS.items():
+    add_strategy(_name)(strategy_registry[_p["base_strategy"]])

@@ -1,6 +1,4 @@
 """Run a batch of sessions and build the report charts for the Run Full Simulation page."""
-import random
-
 import altair as alt
 import polars as pl
 
@@ -12,34 +10,30 @@ MONEY = "(,.2f"  # d3 format: negatives as (100.00)
 DICE_ODDS = {t: (6 - abs(t - 7)) / 36 for t in range(2, 13)}
 
 
-def run_batch(table, seats, num_sims, num_shooters=None, num_rolls=None, seed=None):
+def run_batch(table, seats, num_sims, num_shooters=None, num_rolls=None):
     """Play num_sims sessions. seats: list of (strategy, bankroll, profile).
 
     A session ends after num_shooters seven-outs or, if num_rolls is given, after that many
     rolls (possibly mid-hand; chips still on the table count toward equity).
-    seed: if given, sim i uses random.seed(seed + i), so batches with the same seed see the same dice.
 
     Returns (rolls, sessions):
-      rolls    one row per toss per player: sim, roll, shooter, roll_in_shooter, total, comeout, player, equity, exposure
+      rolls    one row per toss per player: sim, roll, shooter, roll_in_shooter, total, player, equity, exposure
       sessions one row per sim per player: net, max_drawdown, peak_exposure, low_point
     """
     rows = []
     for sim in range(num_sims):
-        if seed is not None:
-            random.seed(seed + sim)
         game = CrapGame(**table)
         players = [CrapsPlayer(id=i + 1, crapgame=game, strategy=s, starting_bankroll=b, profile=p)
                    for i, (s, b, p) in enumerate(seats)]
         roll = shooter = k = 0
         while (roll < num_rolls) if num_rolls else (shooter < num_shooters):
-            comeout = game.button == 'off'
             r = game.play_toss()
             roll += 1
             k += 1
             for pl_ in players:
                 rows.append({
                     "sim": sim, "roll": roll, "shooter": shooter, "roll_in_shooter": k,
-                    "total": r["total"], "comeout": comeout, "player": f"P{pl_.id}: {pl_.strategy}",
+                    "total": r["total"], "player": f"P{pl_.id}: {pl_.strategy}",
                     "start": float(pl_.starting_bankroll),
                     "equity": pl_.bankroll + pl_.chips_on_table(),
                     "exposure": pl_.chips_on_table(),
@@ -111,7 +105,7 @@ def equity_by_shooter(rolls):
 
 def all_seats(rolls):
     """Collapse every seat into one 'All seats' player (equity, start, exposure summed)."""
-    return (rolls.group_by("sim", "roll", "shooter", "roll_in_shooter", "total", "comeout")
+    return (rolls.group_by("sim", "roll", "shooter", "roll_in_shooter", "total")
             .agg(pl.col("start", "equity", "exposure").sum())
             .with_columns(player=pl.lit("All seats")))
 
@@ -189,56 +183,6 @@ def dice_frequency(rolls):
     return (bars + ticks).properties(height=280)
 
 
-LIGHT_NO, LIGHT_1X, LIGHT_MAX = "Pass + 2 Come, No Odds", "Pass + 2 Come, 1x Odds", "Pass + 2 Come, Max Odds"
-DARK_FLAT, DARK_MAX = "Don't Pass + 2 Don't Come, Flat", "Don't Pass + 2 Don't Come, Max Lay"
-
-
-def _press(name, base, odds_units=0, flat_units=0):
-    return (name, {"base_strategy": base, "odds_press_units": odds_units, "flat_press_units": flat_units})
-
-
-# Issue #4: light/dark duo, flats mirrored, from most conservative to most aggressive.
-# Each rung: (label, light seat, dark seat); a seat is (strategy name, profile or None).
-LADDER = [
-    ("1. Flat mirror, no odds", (LIGHT_NO, None), (DARK_FLAT, None)),
-    ("2. Light 1x odds", (LIGHT_1X, None), (DARK_FLAT, None)),
-    ("3. Light max odds", (LIGHT_MAX, None), (DARK_FLAT, None)),
-    ("4. Light 1x odds, press 1u per hit", _press("1x odds, press 1u", LIGHT_1X, odds_units=1), (DARK_FLAT, None)),
-    ("5. Light 1x odds, press 2u per hit", _press("1x odds, press 2u", LIGHT_1X, odds_units=2), (DARK_FLAT, None)),
-    # Light side alone presses its come flats; dark side stays at 1u flats on purpose (per #4 discussion).
-    ("6. Light max odds, press come flats 1u", _press("Max odds, press flats", LIGHT_MAX, flat_units=1), (DARK_FLAT, None)),
-    ("7. Max odds both sides", (LIGHT_MAX, None), (DARK_MAX, None)),
-]
-
-
-def run_ladder(table, bankroll, num_sims, seed, **length):
-    """Play every rung on the same dice (same seed) and return one pooled row per rung."""
-    rows = []
-    for label, light, dark in LADDER:
-        seats = [(name, bankroll, profile) for name, profile in (light, dark)]
-        rolls, _ = run_batch(table, seats, num_sims, seed=seed, **length)
-        rows.append({"rung": label, **ladder_stats(rolls)})
-    return pl.DataFrame(rows)
-
-
-def ladder_stats(rolls):
-    """Pooled (all seats) session stats, with come-out and point-on P&L split out."""
-    pooled = all_seats(rolls).sort("sim", "roll")
-    sess = session_stats(pooled)
-    split = (pooled.with_columns(delta=pl.col("equity") - pl.col("equity").shift(1).over("sim").fill_null(pl.col("start")))
-             .group_by("sim").agg(comeout=pl.col("delta").filter(pl.col("comeout")).sum(),
-                                  point_on=pl.col("delta").filter(~pl.col("comeout")).sum()))
-    net, low = sess["net"], sess["low_point"]
-    return {
-        "mean_net": net.mean(), "median_net": net.median(),
-        "p10_net": net.quantile(0.10), "p90_net": net.quantile(0.90), "p99_net": net.quantile(0.99),
-        "low_95": low.quantile(0.05), "low_99": low.quantile(0.01),
-        "peak_chips": sess["peak_exposure"].max(),
-        "comeout_mean": split["comeout"].mean(), "comeout_sd": split["comeout"].std(),
-        "point_on_mean": split["point_on"].mean(), "point_on_sd": split["point_on"].std(),
-    }
-
-
 def summary(rolls):
     """Per-player headline numbers across all sessions, plus an 'All seats' row when 2+ seats.
     The pooled row is computed from the combined chip stack, so its drawdown and low point
@@ -287,12 +231,5 @@ if __name__ == "__main__":
         f(rolls).to_dict()
     for f in (final_distribution, drawdown_vs_result, team_across_sessions):
         f(sessions).to_dict()
-
-    # #4: ladder (exact rung-1 leak and flat press are tested in test_crapgame.py)
-    lad = run_ladder(table, 1000, 4, seed=5, num_shooters=5)
-    assert lad.height == len(LADDER)
-    assert all(abs(lad[c][i] - (lad["comeout_mean"][i] + lad["point_on_mean"][i])) < 1e-6
-               for i in range(lad.height) for c in ["mean_net"])
-    print(lad.select("rung", "mean_net", "p10_net", "p90_net", "peak_chips"))
     print(t)
     print("ok")
