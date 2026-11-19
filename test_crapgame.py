@@ -659,3 +659,10 @@ class TestSideBets(CrapsTest):
         g.play_toss(3, 3)                      # point 6: place the 8 only, C&E off
         self.assertEqual((p.player_board["6"]["place"], p.player_board["8"]["place"]), (0.0, 6.0))
         self.assertEqual((p.player_board["field"], p.player_board["ce"]), (5.0, 0.0))
+
+    def test_profile_side_bets(self):
+        from player import FIELD
+        g = CrapGame()
+        p = CrapsPlayer(1, g, "mine", 1000, profile={"base_strategy": "Pass + 2 Come, Flat", "side_bets": [FIELD]})
+        g.play_toss(5, 6)
+        self.assertEqual(p.player_board["field"], 5.0)

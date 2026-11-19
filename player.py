@@ -174,13 +174,14 @@ class CrapsPlayer:
         """Seat options on top of the strategy, each 1 unit (place 6/8 at 6/5 unit).
         Place 6 & 8 go up while a point is on, skipping the point and numbers with this seat's come bet."""
         board, game, unit = self.player_board, self.crapgame, self.crapgame.tablemin
-        if PLACE_68 in self.side_bets and game.button != 'off':
+        side_bets = self.side_bets | set((self.profile or {}).get("side_bets", ()))  # seat + profile
+        if PLACE_68 in side_bets and game.button != 'off':
             for n in ("6", "8"):
                 if game.button != int(n) and not board[n]["come"] and not board[n]["place"]:
                     board[n]["place"] = unit * 6 / 5
-        if FIELD in self.side_bets:
+        if FIELD in side_bets:
             board["field"] = unit
-        if CE_ALWAYS in self.side_bets or (CE_COMEOUT in self.side_bets and game.button == 'off'):
+        if CE_ALWAYS in side_bets or (CE_COMEOUT in side_bets and game.button == 'off'):
             board["ce"] = unit
 
 
