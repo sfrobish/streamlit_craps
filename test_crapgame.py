@@ -575,3 +575,35 @@ class TestLinePlusTwoMax(CrapsTest):
                     self.assertEqual(board[str(n)]["place"], 0.0)
                 other = self.LIGHT if dark else self.DARK
                 self.assertEqual([board[k] for k in other[:3]], [0.0, 0.0, 0.0])
+
+
+class TestHedgeLadder(unittest.TestCase):
+    """Issue #4: light/dark duo with mirrored flats."""
+
+    def seat(self, light, dark, light_profile=None):
+        g = CrapGame()
+        return g, CrapsPlayer(1, g, light, 1000, profile=light_profile), CrapsPlayer(2, g, dark, 1000)
+
+    def test_flat_mirror_loses_only_the_12_on_new_light_bets(self):
+        random.seed(21)
+        g, a, b = self.seat("Pass + 2 Come, No Odds", "Don't Pass + 2 Don't Come, Flat")
+        leak = 0.0
+        for _ in range(5000):
+            new_bet = a.player_board["passline"] if g.button == 'off' else a.player_board["comeline"]
+            if g.play_toss()["total"] == 12:
+                leak += new_bet
+        net = a.bankroll + a.chips_on_table() + b.bankroll + b.chips_on_table() - 2000
+        self.assertGreater(leak, 0)
+        self.assertAlmostEqual(net, -leak)
+
+    def test_flat_press_grows_come_line_and_resets_on_seven_out(self):
+        profile = {"base_strategy": "Pass + 2 Come, No Odds", "odds_press_units": 0, "flat_press_units": 1}
+        g, a, _ = self.seat("Press flats", "Don't Pass + 2 Don't Come, Flat", profile)
+        g.play_toss(3, 3)                  # point 6; first come bet goes up
+        self.assertEqual(a.player_board["comeline"], 5.0)
+        g.play_toss(4, 4)                  # come bet travels to 8
+        g.play_toss(5, 3)                  # 8 hits: come win -> press 1 unit
+        self.assertEqual(a.player_board["comeline"], 10.0)
+        g.play_toss(4, 3)                  # seven-out resets the press
+        g.play_toss(2, 2)                  # new point 4
+        self.assertEqual(a.player_board["comeline"], 5.0)

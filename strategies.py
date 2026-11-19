@@ -165,9 +165,10 @@ def dont_lay_one_unit(board, game, prevboard):
     return board, totalbet
 
 
-def _line_plus_two_max(board, game, line, line_odds, come_line, come, come_odds, max_odds):
-    """Keep a line bet up plus up to 2 come bets, each with the table's max odds behind it.
-    Shared by the light side (pass/come, max_odds) and its dark-side mirror (don't, max_lay)."""
+def _line_plus_two(board, game, line, line_odds, come_line, come, come_odds, odds):
+    """Keep a line bet up plus up to 2 come bets, with odds(num, flat) behind each (0 = no odds).
+    Shared by the light side (pass/come) and its dark-side mirror (don't pass/don't come); with the
+    same bet counts the two place flats on exactly the same rolls."""
     unit = game.tablemin
     before = board[line] + board[line_odds] + board[come_line] + sum(board[str(n)][come] + board[str(n)][come_odds] for n in NUMBERS)
     point = game.button
@@ -176,14 +177,14 @@ def _line_plus_two_max(board, game, line, line_odds, come_line, come, come_odds,
             board[line] = unit
     else:
         if board[line] > 0 and board[line_odds] == 0:
-            board[line_odds] = max_odds(point, board[line])
+            board[line_odds] = odds(point, board[line])
         working = sum(board[str(n)][come] > 0 for n in NUMBERS)
         if board[come_line] == 0 and working < 2:
             board[come_line] = unit
     for n in NUMBERS:
         spot = board[str(n)]
         if spot[come] > 0 and spot[come_odds] == 0:
-            spot[come_odds] = max_odds(n, spot[come])
+            spot[come_odds] = odds(n, spot[come])
     after = board[line] + board[line_odds] + board[come_line] + sum(board[str(n)][come] + board[str(n)][come_odds] for n in NUMBERS)
     return board, after - before
 
@@ -191,7 +192,7 @@ def _line_plus_two_max(board, game, line, line_odds, come_line, come, come_odds,
 @add_strategy('Pass + 2 Come, Max Odds')
 def pass_two_come_max_odds(board, game, prevboard):
     """Pass line plus up to 2 come bets, max odds (per the table's maxodds) behind each. Nothing else."""
-    return _line_plus_two_max(board, game, "passline", "passodds", "comeline", "come", "comeodds", game.max_odds)
+    return _line_plus_two(board, game, "passline", "passodds", "comeline", "come", "comeodds", game.max_odds)
 
 
 @add_strategy("Don't Pass + 2 Don't Come, Max Lay")
@@ -201,4 +202,26 @@ def dont_pass_two_dont_come_max_lay(board, game, prevboard):
     Paired with the light version at the same table it is not a perfect hedge: besides the 12
     (bar push), come odds are off on the come-out while lay odds stay working, so a come-out
     roll that hits a come number or a 7 moves the pair (standard rules, kept on purpose)."""
-    return _line_plus_two_max(board, game, "dontpassline", "dontpassodds", "dontcomeline", "dontcome", "dontcomeodds", game.max_lay)
+    return _line_plus_two(board, game, "dontpassline", "dontpassodds", "dontcomeline", "dontcome", "dontcomeodds", game.max_lay)
+
+
+NO_ODDS = lambda num, flat: 0.0
+
+
+@add_strategy('Pass + 2 Come, No Odds')
+def pass_two_come_no_odds(board, game, prevboard):
+    """Pass line plus up to 2 come bets, flat only."""
+    return _line_plus_two(board, game, "passline", "passodds", "comeline", "come", "comeodds", NO_ODDS)
+
+
+@add_strategy('Pass + 2 Come, 1x Odds')
+def pass_two_come_1x_odds(board, game, prevboard):
+    """Pass line plus up to 2 come bets with 1x odds. Pair with a press profile to grow the odds."""
+    return _line_plus_two(board, game, "passline", "passodds", "comeline", "come", "comeodds",
+                          lambda num, flat: min(flat, game.max_odds(num, flat)))
+
+
+@add_strategy("Don't Pass + 2 Don't Come, Flat")
+def dont_pass_two_dont_come_flat(board, game, prevboard):
+    """Mirror of the 'Pass + 2 Come' family with no lay odds: the flat hedge for the light side."""
+    return _line_plus_two(board, game, "dontpassline", "dontpassodds", "dontcomeline", "dontcome", "dontcomeodds", NO_ODDS)

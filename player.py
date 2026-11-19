@@ -26,6 +26,7 @@ class CrapsPlayer:
         self.strategy = strategy
         self.profile = profile
         self.pressed_odds = {}  # number -> odds size after pressing, this shooter
+        self.pressed_flat = 0.0  # extra come-line flat from come wins (profile flat_press_units), this shooter
         self.starting_bankroll = starting_bankroll
         self.bankroll = starting_bankroll
         self.total_bet = 0
@@ -125,16 +126,21 @@ class CrapsPlayer:
     def update_pressed_odds(self):
         """After a roll: grow the pressed odds size on a number whose odds just won. Resets each shooter."""
         p = self.profile
-        if not p or not p.get("odds_press_units"):
+        if not p or not (p.get("odds_press_units") or p.get("flat_press_units")):
             return
         game = self.crapgame
         if game.last_event == 'sevenout':
             self.pressed_odds = {}
+            self.pressed_flat = 0.0
             return
         roll = game.roll
         if roll not in (4, 5, 6, 8, 9, 10) or not self.prev_board:
             return
         paid = lambda label: self.current_round_payout.get(label) or 0.0
+        if p.get("flat_press_units") and paid(f"come{roll}won"):
+            self.pressed_flat += p["flat_press_units"] * game.tablemin
+        if not p.get("odds_press_units"):
+            return
         # Come odds that were off on the come-out come back at stake, which doesn't count as a win.
         come_odds = self.prev_board[str(roll)]["comeodds"]
         won = [come_odds] if paid(f"come{roll}oddswon") > come_odds else []
@@ -145,9 +151,11 @@ class CrapsPlayer:
 
 
     def press_odds(self):
-        """Raise odds on pressed numbers to their pressed size (the house caps it at max odds).
-        Only resizes odds the strategy chose to place; flat bets are untouched."""
+        """Raise odds on pressed numbers to their pressed size (the house caps it at max odds),
+        and the new come-line bet by any flat press. Only resizes bets the strategy chose to place."""
         board = self.player_board
+        if self.pressed_flat and board["comeline"]:
+            board["comeline"] = max(board["comeline"], self.crapgame.tablemin + self.pressed_flat)
         for n, amt in self.pressed_odds.items():
             spot = board[str(n)]
             if spot["come"] and spot["comeodds"]:
