@@ -4,7 +4,7 @@ import json
 
 import streamlit as st
 
-from strategies import strategy_registry
+from strategies import RENAMED, strategy_registry
 
 NEW = "New profile"
 DEFAULTS = {
@@ -55,6 +55,8 @@ def upload_profiles():
         st.error("Not a valid profiles JSON file.")
         return
     for name, p in loaded.items():
+        if isinstance(p, dict) and p.get("base_strategy") in RENAMED:
+            p["base_strategy"] = RENAMED[p["base_strategy"]]
         if isinstance(p, dict) and p.get("base_strategy") in strategy_registry:
             profiles[name] = {**DEFAULTS, **{k: p[k] for k in DEFAULTS if k in p}}
 

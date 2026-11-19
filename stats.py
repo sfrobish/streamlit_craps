@@ -76,7 +76,11 @@ collist = {
     'dontcome10bet': pl.Float64,
     'dontcome10won': pl.Float64,
     'dontcome10oddsbet': pl.Float64,
-    'dontcome10oddswon': pl.Float64
+    'dontcome10oddswon': pl.Float64,
+    'fieldbet': pl.Float64,
+    'fieldwon': pl.Float64,
+    'cebet': pl.Float64,
+    'cewon': pl.Float64,
 }
 
 
@@ -158,7 +162,11 @@ def player_round_row(round_record, board, current_round_payout):
         'dontcome10bet': board['10']['dontcome'],
         'dontcome10won': current_round_payout.get('dontcome10won', 0.0),
         'dontcome10oddsbet': board['10']['dontcomeodds'],
-        'dontcome10oddswon': current_round_payout.get('dontcome10oddswon', 0.0)
+        'dontcome10oddswon': current_round_payout.get('dontcome10oddswon', 0.0),
+        'fieldbet': board['field'],
+        'fieldwon': current_round_payout.get('fieldwon', 0.0),
+        'cebet': board['ce'],
+        'cewon': current_round_payout.get('cewon', 0.0),
     }
 
     return data

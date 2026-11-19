@@ -377,7 +377,7 @@ class TestSimulationBookkeeping(unittest.TestCase):
 
     def test_money_balances_for_every_strategy(self):
         random.seed(7)
-        aggressive = {"base_strategy": "Pass/Come 2x Place 6&8", "odds_press_units": 1}
+        aggressive = {"base_strategy": "Pass + Come Every Roll, 2x Odds", "odds_press_units": 1}
         seated = [(s, None) for s in strategy_registry] + [("aggressive", aggressive)]
         # Split players across as many tables as the seat limit needs.
         games, players = [], []
@@ -448,8 +448,8 @@ class TestTableLimits(CrapsTest):
 class TestDontLayOneUnit(CrapsTest):
 
     def test_lays_odds_to_win_one_unit(self):
-        from strategies import dont_lay_one_unit
         from crapgame import LAY_ODDS
+        dont_lay_one_unit = strategy_registry["Don't Pass + Don't Come Every Roll, 1x Lay"]
         for point in NUMBERS:
             with self.subTest(point=point):
                 self.setUp()
@@ -458,16 +458,15 @@ class TestDontLayOneUnit(CrapsTest):
                 board["dontpassline"] = 5.0
                 for n in NUMBERS:
                     board[str(n)]["dontcome"] = 5.0
-                dont_lay_one_unit(board, self.g, None)
+                dont_lay_one_unit(board, self.g)
                 self.assertAlmostEqual(board["dontpassodds"] * LAY_ODDS[point], 5.0)
                 for n in NUMBERS:
                     self.assertAlmostEqual(board[str(n)]["dontcomeodds"] * LAY_ODDS[n], 5.0)
                 self.assertEqual(board["dontcomeline"], 5.0)
 
     def test_comeout_only_dontpass(self):
-        from strategies import dont_lay_one_unit
         board = self.p.player_board
-        dont_lay_one_unit(board, self.g, None)
+        strategy_registry["Don't Pass + Don't Come Every Roll, 1x Lay"](board, self.g)
         self.assertEqual(board["dontpassline"], 5.0)
         self.assertEqual(board["dontcomeline"], 0.0)
         self.assertEqual(board["dontpassodds"], 0.0)
@@ -476,7 +475,7 @@ class TestDontLayOneUnit(CrapsTest):
 class TestOddsPress(unittest.TestCase):
     """Pressing odds on a number each time it hits; seven-out resets."""
 
-    def make(self, base="Pass/Come 2x Place 6&8", odds_press_units=1):
+    def make(self, base="Pass + Come Every Roll, 2x Odds", odds_press_units=1):
         self.g = CrapGame()
         self.p = CrapsPlayer(1, self.g, "test", 1000,
                              profile={"base_strategy": base, "odds_press_units": odds_press_units})
@@ -521,15 +520,14 @@ class TestLinePlusTwoMax(CrapsTest):
     DARK = ("dontpassline", "dontpassodds", "dontcomeline", "dontcome", "dontcomeodds")
 
     def strat(self, dark):
-        from strategies import pass_two_come_max_odds, dont_pass_two_dont_come_max_lay
-        return dont_pass_two_dont_come_max_lay if dark else pass_two_come_max_odds
+        return strategy_registry["Don't Pass + 2 Don't Come, Max Lay" if dark else "Pass + 2 Come, Max Odds"]
 
     def test_comeout_only_line_bet(self):
         for dark, (line, line_odds, come_line, *_ ) in ((False, self.LIGHT), (True, self.DARK)):
             with self.subTest(dark=dark):
                 self.setUp()
                 board = self.p.player_board
-                self.strat(dark)(board, self.g, None)
+                self.strat(dark)(board, self.g)
                 self.assertEqual((board[line], board[line_odds], board[come_line]), (5.0, 0.0, 0.0))
 
     def test_odds_follow_table_maxodds(self):
@@ -542,7 +540,7 @@ class TestLinePlusTwoMax(CrapsTest):
                     board = self.p.player_board
                     board[line] = 5.0
                     board["9"][come] = 5.0
-                    self.strat(dark)(board, self.g, None)
+                    self.strat(dark)(board, self.g)
                     cap = self.g.max_lay if dark else self.g.max_odds
                     self.assertEqual(board[line_odds], cap(4, 5.0))
                     self.assertEqual(board["9"][come_odds], cap(9, 5.0))
@@ -557,11 +555,11 @@ class TestLinePlusTwoMax(CrapsTest):
                 board = self.p.player_board
                 board[line] = 5.0
                 board["5"][come] = 5.0
-                self.strat(dark)(board, self.g, None)
+                self.strat(dark)(board, self.g)
                 self.assertEqual(board[come_line], 5.0)    # one working: add another
                 board[come_line] = 0.0
                 board["9"][come] = 5.0
-                self.strat(dark)(board, self.g, None)
+                self.strat(dark)(board, self.g)
                 self.assertEqual(board[come_line], 0.0)    # two working: stop
 
     def test_nothing_else_placed(self):
@@ -570,7 +568,7 @@ class TestLinePlusTwoMax(CrapsTest):
                 self.setUp()
                 self.g.button = 8
                 board = self.p.player_board
-                self.strat(dark)(board, self.g, None)
+                self.strat(dark)(board, self.g)
                 for n in NUMBERS:
                     self.assertEqual(board[str(n)]["place"], 0.0)
                 other = self.LIGHT if dark else self.DARK
@@ -586,7 +584,7 @@ class TestHedgeLadder(unittest.TestCase):
 
     def test_flat_mirror_loses_only_the_12_on_new_light_bets(self):
         random.seed(21)
-        g, a, b = self.seat("Pass + 2 Come, No Odds", "Don't Pass + 2 Don't Come, Flat")
+        g, a, b = self.seat("Pass + 2 Come, Flat", "Don't Pass + 2 Don't Come, Flat")
         leak = 0.0
         for _ in range(5000):
             new_bet = a.player_board["passline"] if g.button == 'off' else a.player_board["comeline"]
@@ -597,7 +595,7 @@ class TestHedgeLadder(unittest.TestCase):
         self.assertAlmostEqual(net, -leak)
 
     def test_flat_press_grows_come_line_and_resets_on_seven_out(self):
-        profile = {"base_strategy": "Pass + 2 Come, No Odds", "odds_press_units": 0, "flat_press_units": 1}
+        profile = {"base_strategy": "Pass + 2 Come, Flat", "odds_press_units": 0, "flat_press_units": 1}
         g, a, _ = self.seat("Press flats", "Don't Pass + 2 Don't Come, Flat", profile)
         g.play_toss(3, 3)                  # point 6; first come bet goes up
         self.assertEqual(a.player_board["comeline"], 5.0)
@@ -608,25 +606,56 @@ class TestHedgeLadder(unittest.TestCase):
         g.play_toss(2, 2)                  # new point 4
         self.assertEqual(a.player_board["comeline"], 5.0)
 
-    def test_each_rung_is_one_strategy_matching_the_two_seat_duo(self):
-        """A rung played from one seat nets the same as its light + dark pair on the same dice."""
-        rungs = {
-            "Hedge 1: Flat Mirror": ("Pass + 2 Come, No Odds", "Don't Pass + 2 Don't Come, Flat", None),
-            "Hedge 3: Light Max Odds": ("Pass + 2 Come, Max Odds", "Don't Pass + 2 Don't Come, Flat", None),
-            "Hedge 5: Light 1x Odds, Press 2u": ("Pass + 2 Come, 1x Odds", "Don't Pass + 2 Don't Come, Flat",
-                                                  {"base_strategy": "Pass + 2 Come, 1x Odds", "odds_press_units": 2}),
-            "Hedge 7: Max Odds Both Sides": ("Pass + 2 Come, Max Odds", "Don't Pass + 2 Don't Come, Max Lay", None),
-        }
-        worth = lambda *ps: sum(p.bankroll + p.chips_on_table() for p in ps)
-        for rung, (light, dark, profile) in rungs.items():
-            with self.subTest(rung):
+    def test_press_presets_match_base_with_profile(self):
+        """A press preset picked by name plays exactly like its base strategy with that profile."""
+        from strategies import PRESETS
+        worth = lambda p: p.bankroll + p.chips_on_table()
+        for name, profile in PRESETS.items():
+            with self.subTest(name):
+                results = []
+                for strategy, prof in ((name, None), (profile["base_strategy"], profile)):
+                    random.seed(3)
+                    g = CrapGame()
+                    p = CrapsPlayer(1, g, strategy, 1000, profile=prof)
+                    for _ in range(3000):
+                        g.play_toss()
+                    results.append(worth(p))
                 random.seed(3)
                 g = CrapGame()
-                one = CrapsPlayer(1, g, rung, 2000)
+                plain = CrapsPlayer(1, g, profile["base_strategy"], 1000)
                 for _ in range(3000):
                     g.play_toss()
-                random.seed(3)
-                g, a, b = self.seat(light, dark, profile)
-                for _ in range(3000):
-                    g.play_toss()
-                self.assertAlmostEqual(worth(one), worth(a, b))
+                self.assertAlmostEqual(*results)
+                self.assertNotAlmostEqual(results[0], worth(plain))  # the press actually did something
+
+
+class TestSideBets(CrapsTest):
+    """Field and C&E are one-roll bets; place 6 & 8 is a seat option on top of any strategy."""
+
+    def roll_with(self, key, total):
+        self.setUp()
+        self.p.player_board[key] = 5.0
+        self.g.take_bets(self.p.player_board, 1)
+        self.g.settle_bets({"total": total})
+        self.assertEqual(self.p.player_board[key], 0.0)  # one roll, then cleared
+        return self.p.payouts.get(f"{key}won", 0.0)
+
+    def test_field_pays(self):
+        for total, back in {2: 15, 3: 10, 4: 10, 9: 10, 10: 10, 11: 10, 12: 20, 5: 0, 6: 0, 7: 0, 8: 0}.items():
+            with self.subTest(total=total):
+                self.assertEqual(self.roll_with("field", total), back)
+
+    def test_ce_pays(self):
+        for total, back in {2: 20, 3: 20, 12: 20, 11: 40, 7: 0, 6: 0}.items():
+            with self.subTest(total=total):
+                self.assertEqual(self.roll_with("ce", total), back)
+
+    def test_seat_options(self):
+        from player import CE_COMEOUT, FIELD, PLACE_68
+        g = CrapGame()
+        p = CrapsPlayer(1, g, "Pass + 2 Come, Flat", 1000, side_bets=(PLACE_68, FIELD, CE_COMEOUT))
+        g.play_toss(5, 6)                      # come-out 11: no place bets yet, C&E and field up
+        self.assertEqual((p.player_board["6"]["place"], p.player_board["field"], p.player_board["ce"]), (0.0, 5.0, 5.0))
+        g.play_toss(3, 3)                      # point 6: place the 8 only, C&E off
+        self.assertEqual((p.player_board["6"]["place"], p.player_board["8"]["place"]), (0.0, 6.0))
+        self.assertEqual((p.player_board["field"], p.player_board["ce"]), (5.0, 0.0))

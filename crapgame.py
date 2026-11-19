@@ -11,6 +11,9 @@ TRUE_ODDS = {4: 2, 10: 2, 5: 3/2, 9: 3/2, 6: 6/5, 8: 6/5}      # pass / come odd
 LAY_ODDS = {4: 1/2, 10: 1/2, 5: 2/3, 9: 2/3, 6: 5/6, 8: 5/6}   # don't pass / don't come odds
 MAX_ODDS_345 = {4: 3, 10: 3, 5: 4, 9: 4, 6: 5, 8: 5}
 PLACE_ODDS = {4: 9/5, 10: 9/5, 5: 7/5, 9: 7/5, 6: 7/6, 8: 7/6}
+FIELD_PAYS = {2: 2, 3: 1, 4: 1, 9: 1, 10: 1, 11: 1, 12: 3}  # ponytail: 3:1 on 12; some houses pay 2:1
+# C&E is half any-craps (7:1), half eleven (15:1); on the whole bet that's 3:1 on craps, 7:1 on 11.
+CE_PAYS = {2: 3, 3: 3, 12: 3, 11: 7}
 
 
 
@@ -40,6 +43,8 @@ class CrapGame:
             "dontpassodds": [None] * SEATS,
             "comeline": [None] * SEATS,
             "dontcomeline": [None] * SEATS,
+            "field": [None] * SEATS,
+            "ce": [None] * SEATS,
             "4": {
                 "place": [None] * SEATS,
                 "buy": [None] * SEATS,
@@ -228,6 +233,9 @@ class CrapGame:
         roll = rolldict["total"]
         point = self.button
         self.last_event = None
+        # One-roll bets, working on every roll.
+        self._settle("field", mult=FIELD_PAYS.get(roll), label="fieldwon")
+        self._settle("ce", mult=CE_PAYS.get(roll), label="cewon")
 
         if point == 'off':
             # Come-out roll. Place bets and come odds are off; don't come odds work.

@@ -7,7 +7,7 @@ from crapgame import CrapGame, SEATS
 from player import CrapsPlayer
 from strategies import PRESETS, strategy_registry
 from simulation import run_multiple_simulations
-from table_settings import table_settings
+from table_settings import side_bet_inputs, table_settings
 
 # Title and description
 st.title("🎲 Craps Betting Strategy Simulator")
@@ -73,7 +73,8 @@ for i in range(num_players):
             step=100.0,
             key=f"bankroll_{i}"
         )
-        
+        side_bets = side_bet_inputs(f"demo_{i}")
+
         if f"Player_{i+1}" not in st.session_state.players.keys():
             player = CrapsPlayer(
                 i+1,
@@ -87,6 +88,7 @@ for i in range(num_players):
             player = st.session_state.players[f"Player_{i+1}"]
             player.strategy = strategy_type
             player.profile = profiles.get(strategy_type) or PRESETS.get(strategy_type)
+        player.side_bets = set(side_bets)  # takes effect on the next bet
             
 
         if debugmode:

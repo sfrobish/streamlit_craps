@@ -11,7 +11,7 @@ DICE_ODDS = {t: (6 - abs(t - 7)) / 36 for t in range(2, 13)}
 
 
 def run_batch(table, seats, num_sims, num_shooters=None, num_rolls=None):
-    """Play num_sims sessions. seats: list of (strategy, bankroll, profile).
+    """Play num_sims sessions. seats: list of (strategy, bankroll, profile, side_bets).
 
     A session ends after num_shooters seven-outs or, if num_rolls is given, after that many
     rolls (possibly mid-hand; chips still on the table count toward equity).
@@ -23,8 +23,8 @@ def run_batch(table, seats, num_sims, num_shooters=None, num_rolls=None):
     rows = []
     for sim in range(num_sims):
         game = CrapGame(**table)
-        players = [CrapsPlayer(id=i + 1, crapgame=game, strategy=s, starting_bankroll=b, profile=p)
-                   for i, (s, b, p) in enumerate(seats)]
+        players = [CrapsPlayer(id=i + 1, crapgame=game, strategy=s, starting_bankroll=b, profile=p, side_bets=x)
+                   for i, (s, b, p, x) in enumerate(seats)]
         roll = shooter = k = 0
         while (roll < num_rolls) if num_rolls else (shooter < num_shooters):
             r = game.play_toss()
@@ -33,7 +33,7 @@ def run_batch(table, seats, num_sims, num_shooters=None, num_rolls=None):
             for pl_ in players:
                 rows.append({
                     "sim": sim, "roll": roll, "shooter": shooter, "roll_in_shooter": k,
-                    "total": r["total"], "player": f"P{pl_.id}: {pl_.strategy}",
+                    "total": r["total"], "player": f"P{pl_.id}: " + " + ".join([pl_.strategy, *sorted(pl_.side_bets)]),
                     "start": float(pl_.starting_bankroll),
                     "equity": pl_.bankroll + pl_.chips_on_table(),
                     "exposure": pl_.chips_on_table(),
@@ -203,22 +203,23 @@ def summary(rolls):
 
 
 if __name__ == "__main__":
+    EVERY = "Pass + Come Every Roll, 2x Odds"
     table = {"tablemin": 5.0, "limit": 1000.0, "maxodds": "3x4x5x"}
-    rolls, sessions = run_batch(table, [("Pass/Come 2x Place 6&8", 1000, None)], 5, 10)
+    rolls, sessions = run_batch(table, [(EVERY, 1000, None, ())], 5, 10)
     # equity bookkeeping: summed per-roll changes must equal session net
     s = sessions.sort("sim")["net"].to_list()
     per = (rolls.sort("sim", "roll").with_columns(prev=pl.col("equity").shift(1).over("sim").fill_null(pl.col("start")))
            .group_by("sim").agg((pl.col("equity") - pl.col("prev")).sum()).sort("sim")["equity"].to_list())
     assert all(abs(a - b) < 1e-6 for a, b in zip(s, per)), (s, per)
     assert len(sessions) == 5 and rolls["shooter"].max() == 9
-    assert summary(rolls)["player"].to_list() == ["P1: Pass/Come 2x Place 6&8"]  # no pooled row for one seat
+    assert summary(rolls)["player"].to_list() == ["P1: " + EVERY]  # no pooled row for one seat
 
     # #9: session length in rolls
-    r2, s2 = run_batch(table, [("Pass/Come 2x Place 6&8", 1000, None)], 4, num_rolls=37)
+    r2, s2 = run_batch(table, [(EVERY, 1000, None, ())], 4, num_rolls=37)
     assert r2.group_by("sim").agg(pl.col("roll").max())["roll"].to_list() == [37] * 4
 
     # #10: pooled row = combined stack; net sums, drawdown is the team's (<= sum of seats')
-    seats = [("Pass/Come 2x Place 6&8", 1000, None), ("Dark Side 3", 500, None)]
+    seats = [(EVERY, 1000, None, ("Place 6&8", "Field")), ("Don't Pass + 2 Don't Come, Max Lay", 500, None, ("C&E come-out",))]
     r3, s3 = run_batch(table, seats, 6, 5)
     t = summary(r3)
     assert t["player"].to_list()[-1] == "All seats" and t["sessions"].to_list() == [6, 6, 6]

@@ -3,7 +3,7 @@ import streamlit as st
 import reports
 from crapgame import SEATS
 from strategies import strategy_registry
-from table_settings import table_settings
+from table_settings import side_bet_inputs, table_settings
 
 profiles = st.session_state.setdefault("profiles", {})
 
@@ -37,6 +37,7 @@ num_players = st.number_input(
     step=1
 )
 
+side_bets = {}
 for i in range(num_players):
     st.subheader(f"🎲 Player {i+1} Configuration")
     strategy = st.selectbox(
@@ -52,12 +53,14 @@ for i in range(num_players):
         step=100,
         key=f"bankroll_player_{i}"
     )
+    side_bets[i] = side_bet_inputs(f"player_{i}")
 
 if st.button("🎲 Run Simulation", type="primary"):
     with st.spinner("Running simulation..."):
         seats = [(st.session_state[f"strategy_player_{i}"],
                   st.session_state[f"bankroll_player_{i}"],
-                  profiles.get(st.session_state[f"strategy_player_{i}"]))
+                  profiles.get(st.session_state[f"strategy_player_{i}"]),
+                  side_bets[i])
                  for i in range(num_players)]
         length = {"num_rolls": session_length} if length_by == "Rolls" else {"num_shooters": session_length}
         st.session_state.sim_results = reports.run_batch(table, seats, num_simulations, **length)

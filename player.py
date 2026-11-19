@@ -7,24 +7,28 @@ import polars as pl
 from strategies import PRESETS, strategy_registry
 from stats import collist, player_round_row
 
+# Seat options (side bets), added on top of any strategy.
+PLACE_68, FIELD, CE_COMEOUT, CE_ALWAYS = "Place 6&8", "Field", "C&E come-out", "C&E every roll"
 
 
 class CrapsPlayer:
     """Represents a craps player with a betting strategy."""
-    
-    def __init__(self, id, crapgame, strategy, starting_bankroll, profile=None):
+
+    def __init__(self, id, crapgame, strategy, starting_bankroll, profile=None, side_bets=()):
         """Initialize the player.
-        
+
         Args:
             strategy: Display name of the strategy (registry key or profile name)
             starting_bankroll: Starting bankroll amount
             profile: Optional press profile (see pages/edit_strategies.py);
                 its base_strategy is what actually places bets.
+            side_bets: any of PLACE_68, FIELD, CE_COMEOUT, CE_ALWAYS
         """
         self.id = id
         self.crapgame = crapgame
         self.strategy = strategy
         self.profile = profile or PRESETS.get(strategy)
+        self.side_bets = set(side_bets)
         self.pressed_odds = {}  # number -> odds size after pressing, this shooter
         self.pressed_flat = 0.0  # extra come-line flat from come wins (profile flat_press_units), this shooter
         self.starting_bankroll = starting_bankroll
@@ -40,6 +44,8 @@ class CrapsPlayer:
             "dontpassodds": 0.0,
             "comeline": 0.0,
             "dontcomeline": 0.0,
+            "field": 0.0,
+            "ce": 0.0,
             "4": {
                 "place": 0.0,
                 "buy": 0.0,
@@ -114,9 +120,9 @@ class CrapsPlayer:
         before = self.chips_on_table()
         self.update_pressed_odds()
         base = self.profile["base_strategy"] if self.profile else self.strategy
-        # Strategy's own bet total is ignored: charge what actually landed on the table.
-        self.player_board, _ = strategy_registry[base](self.player_board, self.crapgame, self.prev_board)
+        self.player_board = strategy_registry[base](self.player_board, self.crapgame)
         self.press_odds()
+        self.add_side_bets()
         self.crapgame.take_bets(self.player_board, self.id)  # house trims anything over its limits
         self.total_bet = self.chips_on_table()
         self.total_wagered += self.total_bet - before
@@ -162,6 +168,20 @@ class CrapsPlayer:
                 spot["comeodds"] = max(spot["comeodds"], amt)
             if self.crapgame.button == n and board["passline"] and board["passodds"]:
                 board["passodds"] = max(board["passodds"], amt)
+
+
+    def add_side_bets(self):
+        """Seat options on top of the strategy, each 1 unit (place 6/8 at 6/5 unit).
+        Place 6 & 8 go up while a point is on, skipping the point and numbers with this seat's come bet."""
+        board, game, unit = self.player_board, self.crapgame, self.crapgame.tablemin
+        if PLACE_68 in self.side_bets and game.button != 'off':
+            for n in ("6", "8"):
+                if game.button != int(n) and not board[n]["come"] and not board[n]["place"]:
+                    board[n]["place"] = unit * 6 / 5
+        if FIELD in self.side_bets:
+            board["field"] = unit
+        if CE_ALWAYS in self.side_bets or (CE_COMEOUT in self.side_bets and game.button == 'off'):
+            board["ce"] = unit
 
 
     def chips_on_table(self):
